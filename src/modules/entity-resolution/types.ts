@@ -1,0 +1,10 @@
+export type EntityType = "ADMINISTRATION" | "BUILDING" | "PARTY";
+export interface EntityRecord { readonly id:string; readonly organizationId:string; readonly type:EntityType; readonly legalName:string; readonly tradeName?:string; readonly taxId?:string; readonly emails?:readonly string[]; readonly phones?:readonly string[] }
+export interface TemporalRelationship { readonly id:string; readonly organizationId:string; readonly administrationId:string; readonly buildingId:string; readonly validFrom:string; readonly validTo?:string }
+export interface ResolutionSignal { readonly organizationId:string; readonly entityType:EntityType; readonly rawName?:string; readonly normalizedName?:string; readonly taxId?:string; readonly buildingId?:string; readonly invoiceDate?:string; readonly email?:string; readonly phone?:string; readonly sourceRefs:readonly string[] }
+export type ResolutionStatus = "RESOLVED"|"REVIEW_REQUIRED"|"AMBIGUOUS"|"NO_MATCH"|"CONFLICT";
+export interface Candidate { readonly entityId:string; readonly supportingEvidence:readonly string[]; readonly contradictingEvidence:readonly string[]; readonly reasonCodes:readonly string[] }
+export interface ResolutionResult { readonly status:ResolutionStatus; readonly resolvedEntityId:null|string; readonly candidates:readonly Candidate[]; readonly reasonCodes:readonly string[]; readonly sourceRefs:readonly string[]; readonly requiresHumanDecision:boolean }
+export type DecisionAction = "CONFIRM_EXISTING"|"REJECT_CANDIDATE"|"CREATE_NEW"|"DEFER";
+export interface DecisionEvent { readonly id:string; readonly organizationId:string; readonly normalizedAlias:string; readonly entityType:EntityType; readonly entityId?:string; readonly action:DecisionAction; readonly decidedBy:string; readonly decidedAt:string; readonly sourceRefs:readonly string[]; readonly reason:string; readonly supersedesId?:string }
+export interface AliasProjection { readonly organizationId:string; readonly entityType:EntityType; readonly normalizedAlias:string; readonly entityId:string; readonly effect:"CONFIRMED"|"REJECTED"; readonly sourceDecisionId:string }

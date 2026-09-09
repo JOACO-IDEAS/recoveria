@@ -1,0 +1,19 @@
+import type{OperationalPolicy}from"./policy";import type{AttentionItem,Explanation,OperationalCase}from"./types";
+const reason=(code:string,text:string,evidenceRefs:readonly string[]):Explanation=>({code,text,evidenceRefs});
+const pesos=(c:number)=>new Intl.NumberFormat("es-AR",{style:"currency",currency:"ARS",maximumFractionDigits:0}).format(c/100);
+export function prioritizeCase(c:OperationalCase,p:OperationalPolicy):AttentionItem{
+ const reasons:Explanation[]=[],blockers:Explanation[]=[];let attentionType:AttentionItem["attentionType"]="NO_ACTION",priorityTier:AttentionItem["priorityTier"]="LOW";
+ if(c.legalReviewFlag.value){attentionType="REVIEW_LEGAL_THRESHOLD";priorityTier="CRITICAL";reasons.push(reason("LEGAL_REVIEW_THRESHOLD",`Superó el umbral configurado para revisión humana/legal`,c.legalReviewFlag.evidenceRefs));}
+ else if(c.entityState.value!=="CONFIRMED"||c.invoiceEvidenceConflict.value){attentionType="REVIEW_ENTITY";priorityTier="HIGH";reasons.push(reason("ENTITY_UNSAFE",c.invoiceEvidenceConflict.value?"La evidencia de la factura presenta conflictos":"La identidad asociada requiere revisión",[...c.entityState.evidenceRefs,...c.invoiceEvidenceConflict.evidenceRefs]));blockers.push(reason("UNSAFE_IDENTITY","No avanzar con cobranza hasta resolver la evidencia",c.entityState.evidenceRefs));}
+ else if(!c.contactAvailable.value){attentionType="ADD_CONTACT";priorityTier="HIGH";reasons.push(reason("MISSING_CONTACT","No hay un contacto disponible",c.contactAvailable.evidenceRefs));blockers.push(reason("NO_CONTACT","No se puede preparar seguimiento sin un canal confirmado",c.contactAvailable.evidenceRefs));}
+ else if(c.dispute.value){attentionType="REVIEW_DISPUTE";priorityTier="HIGH";reasons.push(reason("DISPUTED","La factura registra una disputa",c.dispute.evidenceRefs));blockers.push(reason("ROUTINE_FOLLOW_UP_BLOCKED","La disputa requiere revisión humana",c.dispute.evidenceRefs));}
+ else if(c.promise.value==="MISSED"){attentionType="VERIFY_PROMISE";priorityTier="CRITICAL";reasons.push(reason("MISSED_PROMISE","La promesa de pago está incumplida",c.promise.evidenceRefs));}
+ else if(c.promise.value==="ACTIVE"){attentionType="NO_ACTION";priorityTier="LOW";reasons.push(reason("ACTIVE_PROMISE","Existe una promesa activa aún vigente",c.promise.evidenceRefs));blockers.push(reason("WAIT_ACTIVE_PROMISE","Evitar seguimiento innecesario antes de su vencimiento",c.promise.evidenceRefs));}
+ else if((c.daysSinceLastContact.value??Infinity)>=p.staleContactDays&&c.oldestDaysOverdue.value>0){attentionType="FOLLOW_UP";priorityTier="HIGH";reasons.push(reason("STALE_CONTACT",c.lastContactAt.value?`${c.daysSinceLastContact.value} días desde el último contacto`:"No hay contacto registrado",[...c.lastContactAt.evidenceRefs,...c.daysSinceLastContact.evidenceRefs]));}
+ else if(c.oldestDaysOverdue.value>=p.oldReceivableDays){attentionType="REVIEW_OLD_RECEIVABLE";priorityTier="HIGH";reasons.push(reason("OLD_RECEIVABLE",`${c.oldestDaysOverdue.value} días de atraso`,c.oldestDaysOverdue.evidenceRefs));}
+ else if(c.oldestDaysOverdue.value>0){attentionType="FOLLOW_UP";priorityTier="MEDIUM";reasons.push(reason("OVERDUE",`${c.oldestDaysOverdue.value} días de atraso`,c.oldestDaysOverdue.evidenceRefs));}
+ else reasons.push(reason("NOT_DUE","No hay saldo vencido",c.oldestDaysOverdue.evidenceRefs));
+ if(c.outstandingCents.value>0)reasons.push(reason("OUTSTANDING",`${pesos(c.outstandingCents.value)} pendientes`,c.outstandingCents.evidenceRefs));
+ if(c.overdueInvoiceCount.value>1)reasons.push(reason("MULTIPLE_OVERDUE",`${c.overdueInvoiceCount.value} facturas vencidas`,c.overdueInvoiceCount.evidenceRefs));
+ const evidenceReferences=[...new Set([...reasons,...blockers].flatMap(x=>x.evidenceRefs))];return{caseId:c.id,organizationId:c.organizationId,attentionType,priorityTier,outstandingCents:c.outstandingCents.value,currency:c.currency,reasons,blockers,evidenceReferences};
+}

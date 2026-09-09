@@ -1,0 +1,2 @@
+export interface OperationalPolicy{readonly key:string;readonly version:string;readonly staleContactDays:number;readonly oldReceivableDays:number;readonly largeBalanceCents:number;readonly maxAttentionItems:number}
+export const DEFAULT_OPERATIONAL_POLICY:OperationalPolicy=Object.freeze({key:"recoveria-operational",version:"1",staleContactDays:30,oldReceivableDays:365,largeBalanceCents:100_000_000,maxAttentionItems:8});

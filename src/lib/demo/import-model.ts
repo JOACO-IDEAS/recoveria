@@ -1,0 +1,2 @@
+import{ImportOrchestrator}from"@/modules/ingestion/import-orchestrator";import{buildSyntheticDocumentCorpus,SYNTHETIC_ENTITY_CATALOG}from"@/test/fixtures/document-corpus";
+export async function importDemo(){const{documents,truth}=await buildSyntheticDocumentCorpus();const batch=await new ImportOrchestrator().run('org-recoveria-synthetic','ui-synthetic-v1',documents,SYNTHETIC_ENTITY_CATALOG);return{batch,truth};}

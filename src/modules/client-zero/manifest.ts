@@ -1,0 +1,2 @@
+export interface ClientZeroManifestEntry{documentInternalId:string;checksum:string;format:string;parserRoute:string;processingStatus:string;reviewRequired:boolean;duplicateStatus:"NONE"|"EXACT"|"POSSIBLE";failureReason:string|null}
+export const CLIENT_ZERO_MANIFEST_FIELDS:readonly(keyof ClientZeroManifestEntry)[]=["documentInternalId","checksum","format","parserRoute","processingStatus","reviewRequired","duplicateStatus","failureReason"];

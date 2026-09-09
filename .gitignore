@@ -1,0 +1,38 @@
+# dependencies and build output
+/node_modules
+/.next
+/out
+/coverage
+
+# local configuration and secrets
+.env
+.env.*
+!.env.example
+
+# generated Prisma client and local databases
+/src/generated
+*.db
+*.db-journal
+
+# logs and OS/editor files
+*.log
+*.tsbuildinfo
+.DS_Store
+.idea
+.vscode
+
+# local agent/tooling session state (not product source)
+/.omc
+
+# real or local ingestion material (synthetic fixtures live under tests/fixtures)
+/data
+/imports
+/uploads
+/private
+
+# CLIENT ZERO / REAL DATA — never commit, stage, package, or serve.
+/.private/client-zero/**
+/client-zero-private/**
+/reports/client-zero/**
+/screenshots/client-zero/**
+*client-zero-sensitive-report*

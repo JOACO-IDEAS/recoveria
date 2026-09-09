@@ -1,0 +1,684 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum MembershipRole {
+  OWNER
+  OPERATOR
+  REVIEWER
+  VIEWER
+}
+
+enum PartyRole {
+  ISSUER
+  DEBTOR
+  ADMINISTRATION
+}
+
+enum ContactPointType {
+  EMAIL
+  PHONE
+  WHATSAPP
+}
+
+enum ImportStatus {
+  CREATED
+  PROCESSING
+  NEEDS_REVIEW
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+enum DocumentKind {
+  INVOICE
+  OTHER
+}
+
+enum ExtractionStatus {
+  PENDING
+  RUNNING
+  SUCCEEDED
+  PARTIAL
+  FAILED
+}
+
+enum ConfirmationState {
+  RAW
+  NORMALIZED
+  CONFIRMED
+  REJECTED
+}
+
+enum ResolutionTargetType {
+  PARTY
+  BUILDING
+  CONTACT
+}
+
+enum ResolutionDecisionStatus {
+  PENDING
+  CONFIRMED
+  REJECTED
+  NO_MATCH
+}
+
+enum ResolutionDecisionAction {
+  CONFIRM_EXISTING
+  REJECT_CANDIDATE
+  CREATE_NEW
+  DEFER
+}
+
+enum InvoiceState {
+  ISSUED
+  DISPUTED
+  CANCELLED
+}
+
+enum ReceivableEntryType {
+  INVOICE_ISSUED
+  PAYMENT
+  ADJUSTMENT
+  CREDIT
+  WRITE_OFF
+}
+
+enum CollectionCaseStatus {
+  OPEN
+  ON_HOLD
+  RESOLVED
+  CLOSED
+}
+
+enum CollectionEventType {
+  CASE_OPENED
+  INVOICE_OVERDUE
+  FOLLOW_UP_PREPARED
+  FOLLOW_UP_APPROVED
+  MESSAGE_SENT
+  NO_RESPONSE
+  RESPONSE_RECEIVED
+  PROMISE_RECORDED
+  PROMISE_MISSED
+  INVOICE_DISPUTED
+  PARTIAL_PAYMENT
+  HUMAN_REVIEW_REQUESTED
+  LEGAL_REVIEW_SUGGESTED
+  NOTE
+}
+
+enum PromiseStatus {
+  OPEN
+  KEPT
+  MISSED
+  CANCELLED
+}
+
+enum ReviewTaskType {
+  EXTRACTION
+  ENTITY_RESOLUTION
+  FINANCIAL
+  CONTACT
+  LEGAL
+}
+
+enum ReviewTaskStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  DISMISSED
+}
+
+enum LegalReviewFlagStatus {
+  RECOMMENDED
+  IN_REVIEW
+  CLEARED
+  ESCALATED
+}
+
+enum IngestionDocumentFormat {
+  PDF_NATIVE
+  PDF_SCANNED
+  CSV
+  XLSX
+  UNSUPPORTED
+  MALFORMED
+}
+
+enum DocumentProcessingStatus {
+  RECEIVED
+  PARSED
+  REVIEW_REQUIRED
+  UNSUPPORTED
+  FAILED
+}
+
+enum ImportCandidateStatus {
+  PARSED
+  REVIEW_REQUIRED
+  ACCEPTED
+  REJECTED
+}
+
+enum DuplicateKind {
+  EXACT_DOCUMENT_DUPLICATE
+  POSSIBLE_BUSINESS_DUPLICATE
+}
+
+model Organization {
+  id                  String                     @id @default(cuid())
+  name                String
+  createdAt           DateTime                   @default(now())
+  updatedAt           DateTime                   @updatedAt
+  memberships         Membership[]
+  parties             Party[]
+  buildings           Building[]
+  contacts            Contact[]
+  contactPoints       ContactPoint[]
+  contactAssociations ContactAssociation[]
+  administrationLinks AdministrationBuilding[]
+  importBatches       ImportBatch[]
+  sourceDocuments     SourceDocument[]
+  extractionResults   ExtractionResult[]
+  extractedFields     ExtractedField[]
+  resolutionEvidence  EntityResolutionEvidence[]
+  resolutionDecisions EntityResolutionDecision[]
+  invoices            Invoice[]
+  receivables         Receivable[]
+  ledgerEntries       ReceivableLedgerEntry[]
+  collectionCases     CollectionCase[]
+  caseReceivables     CollectionCaseReceivable[]
+  collectionEvents    CollectionEvent[]
+  promises            PromiseToPay[]
+  reviewTasks         ReviewTask[]
+  legalReviewFlags    LegalReviewFlag[]
+  importSummaries     ImportBatchSummary[]
+  invoiceCandidates   InvoiceImportCandidate[]
+  duplicateFindings   DuplicateFinding[]
+}
+
+model Membership {
+  id             String         @id @default(cuid())
+  organizationId String
+  userId         String
+  role           MembershipRole
+  active         Boolean        @default(true)
+  createdAt      DateTime       @default(now())
+  organization   Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, userId])
+  @@index([userId, active])
+}
+
+model Party {
+  id                    String                     @id @default(cuid())
+  organizationId        String
+  displayName           String
+  normalizedName        String
+  taxId                 String?
+  roles                 PartyRole[]
+  createdAt             DateTime                   @default(now())
+  updatedAt             DateTime                   @updatedAt
+  organization          Organization               @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  administeredBuildings AdministrationBuilding[]
+  contactAssociations   ContactAssociation[]
+  issuedInvoices        Invoice[]                  @relation("InvoiceIssuer")
+  billedInvoices        Invoice[]                  @relation("InvoiceBilledTo")
+  cases                 CollectionCase[]
+  resolutionEvidence    EntityResolutionEvidence[]
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, taxId])
+  @@index([organizationId, normalizedName])
+}
+
+model Building {
+  id                  String                     @id @default(cuid())
+  organizationId      String
+  displayName         String
+  normalizedName      String
+  taxId               String?
+  address             String?
+  createdAt           DateTime                   @default(now())
+  updatedAt           DateTime                   @updatedAt
+  organization        Organization               @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  administrations     AdministrationBuilding[]
+  contactAssociations ContactAssociation[]
+  invoices            Invoice[]
+  cases               CollectionCase[]
+  resolutionEvidence  EntityResolutionEvidence[]
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, taxId])
+  @@index([organizationId, normalizedName])
+}
+
+model AdministrationBuilding {
+  id               String       @id @default(cuid())
+  organizationId   String
+  administrationId String
+  buildingId       String
+  validFrom        DateTime?
+  validTo          DateTime?
+  confirmedAt      DateTime?
+  evidenceRef      String?
+  organization     Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  administration   Party        @relation(fields: [administrationId], references: [id], onDelete: Restrict)
+  building         Building     @relation(fields: [buildingId], references: [id], onDelete: Restrict)
+
+  @@unique([organizationId, administrationId, buildingId, validFrom])
+  @@index([organizationId, buildingId, validTo])
+}
+
+model Contact {
+  id                 String                     @id @default(cuid())
+  organizationId     String
+  displayName        String
+  createdAt          DateTime                   @default(now())
+  updatedAt          DateTime                   @updatedAt
+  organization       Organization               @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  points             ContactPoint[]
+  associations       ContactAssociation[]
+  resolutionEvidence EntityResolutionEvidence[]
+
+  @@unique([organizationId, id])
+  @@index([organizationId, displayName])
+}
+
+model ContactPoint {
+  id             String           @id @default(cuid())
+  organizationId String
+  contactId      String
+  type           ContactPointType
+  value          String
+  verifiedAt     DateTime?
+  sourceRef      String?
+  createdAt      DateTime         @default(now())
+  organization   Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  contact        Contact          @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, type, value])
+  @@index([organizationId, contactId])
+}
+
+model ContactAssociation {
+  id             String       @id @default(cuid())
+  organizationId String
+  contactId      String
+  partyId        String?
+  buildingId     String?
+  purpose        String?
+  validFrom      DateTime?
+  validTo        DateTime?
+  evidenceRef    String?
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  contact        Contact      @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  party          Party?       @relation(fields: [partyId], references: [id], onDelete: Cascade)
+  building       Building?    @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, partyId, validTo])
+  @@index([organizationId, buildingId, validTo])
+}
+
+model ImportBatch {
+  id                String                   @id @default(cuid())
+  organizationId    String
+  label             String
+  status            ImportStatus             @default(CREATED)
+  idempotencyKey    String
+  createdBy         String
+  createdAt         DateTime                 @default(now())
+  completedAt       DateTime?
+  organization      Organization             @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  documents         SourceDocument[]
+  summary           ImportBatchSummary?
+  candidates        InvoiceImportCandidate[]
+  duplicateFindings DuplicateFinding[]
+
+  @@unique([organizationId, idempotencyKey])
+  @@index([organizationId, status])
+}
+
+model ImportBatchSummary {
+  id                   String       @id @default(cuid())
+  organizationId       String
+  importBatchId        String       @unique
+  documentsReceived    Int
+  documentsParsed      Int
+  invoiceCandidates    Int
+  reviewRequired       Int
+  duplicates           Int
+  unsupportedDocuments Int
+  failures             Int
+  finalizedAt          DateTime     @default(now())
+  organization         Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  importBatch          ImportBatch  @relation(fields: [importBatchId], references: [id], onDelete: Restrict)
+
+  @@index([organizationId, finalizedAt])
+}
+
+model SourceDocument {
+  id                         String                   @id @default(cuid())
+  organizationId             String
+  importBatchId              String
+  kind                       DocumentKind
+  fileName                   String
+  mediaType                  String
+  contentHash                String
+  storageKey                 String
+  byteSize                   BigInt
+  detectedFormat             IngestionDocumentFormat?
+  processingStatus           DocumentProcessingStatus @default(RECEIVED)
+  reviewRequired             Boolean                  @default(false)
+  processingErrorCode        String?
+  createdAt                  DateTime                 @default(now())
+  organization               Organization             @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  importBatch                ImportBatch              @relation(fields: [importBatchId], references: [id], onDelete: Restrict)
+  extractionResults          ExtractionResult[]
+  invoices                   Invoice[]
+  importCandidates           InvoiceImportCandidate[]
+  duplicateFindings          DuplicateFinding[]       @relation("DuplicateSource")
+  matchedByDuplicateFindings DuplicateFinding[]       @relation("DuplicateMatch")
+
+  @@unique([organizationId, contentHash])
+  @@index([organizationId, importBatchId])
+}
+
+model ExtractionResult {
+  id               String                   @id @default(cuid())
+  organizationId   String
+  sourceDocumentId String
+  status           ExtractionStatus
+  strategy         String
+  parserVersion    String
+  extractorVersion String
+  startedAt        DateTime
+  completedAt      DateTime?
+  warnings         Json?
+  createdAt        DateTime                 @default(now())
+  organization     Organization             @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  sourceDocument   SourceDocument           @relation(fields: [sourceDocumentId], references: [id], onDelete: Restrict)
+  fields           ExtractedField[]
+  importCandidates InvoiceImportCandidate[]
+
+  @@index([organizationId, sourceDocumentId, createdAt])
+}
+
+model InvoiceImportCandidate {
+  id                 String                @id @default(cuid())
+  organizationId     String
+  importBatchId      String
+  sourceDocumentId   String
+  extractionResultId String
+  candidateIndex     Int
+  status             ImportCandidateStatus
+  reviewReasons      String[]
+  createdAt          DateTime              @default(now())
+  acceptedInvoiceId  String?               @unique
+  organization       Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  importBatch        ImportBatch           @relation(fields: [importBatchId], references: [id], onDelete: Restrict)
+  sourceDocument     SourceDocument        @relation(fields: [sourceDocumentId], references: [id], onDelete: Restrict)
+  extractionResult   ExtractionResult      @relation(fields: [extractionResultId], references: [id], onDelete: Restrict)
+  acceptedInvoice    Invoice?              @relation(fields: [acceptedInvoiceId], references: [id], onDelete: Restrict)
+
+  @@unique([organizationId, sourceDocumentId, extractionResultId, candidateIndex])
+  @@index([organizationId, status, createdAt])
+}
+
+model DuplicateFinding {
+  id                String         @id @default(cuid())
+  organizationId    String
+  importBatchId     String
+  sourceDocumentId  String
+  matchesDocumentId String
+  kind              DuplicateKind
+  evidence          Json
+  createdAt         DateTime       @default(now())
+  organization      Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  importBatch       ImportBatch    @relation(fields: [importBatchId], references: [id], onDelete: Restrict)
+  sourceDocument    SourceDocument @relation("DuplicateSource", fields: [sourceDocumentId], references: [id], onDelete: Restrict)
+  matchesDocument   SourceDocument @relation("DuplicateMatch", fields: [matchesDocumentId], references: [id], onDelete: Restrict)
+
+  @@unique([organizationId, sourceDocumentId, matchesDocumentId, kind])
+  @@index([organizationId, importBatchId, kind])
+}
+
+model ExtractedField {
+  id                 String                     @id @default(cuid())
+  organizationId     String
+  extractionResultId String
+  fieldName          String
+  rawValue           String
+  normalizedValue    Json?
+  state              ConfirmationState          @default(RAW)
+  confidence         Decimal?                   @db.Decimal(5, 4)
+  sourceLocation     Json
+  createdAt          DateTime                   @default(now())
+  organization       Organization               @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  extractionResult   ExtractionResult           @relation(fields: [extractionResultId], references: [id], onDelete: Restrict)
+  resolutionEvidence EntityResolutionEvidence[]
+  decisions          EntityResolutionDecision[]
+
+  @@index([organizationId, extractionResultId, fieldName])
+}
+
+model EntityResolutionEvidence {
+  id                  String                     @id @default(cuid())
+  organizationId      String
+  extractedFieldId    String
+  targetType          ResolutionTargetType
+  candidatePartyId    String?
+  candidateBuildingId String?
+  candidateContactId  String?
+  method              String
+  confidence          Decimal                    @db.Decimal(5, 4)
+  features            Json
+  rank                Int
+  createdAt           DateTime                   @default(now())
+  organization        Organization               @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  extractedField      ExtractedField             @relation(fields: [extractedFieldId], references: [id], onDelete: Restrict)
+  candidateParty      Party?                     @relation(fields: [candidatePartyId], references: [id], onDelete: Restrict)
+  candidateBuilding   Building?                  @relation(fields: [candidateBuildingId], references: [id], onDelete: Restrict)
+  candidateContact    Contact?                   @relation(fields: [candidateContactId], references: [id], onDelete: Restrict)
+  decisions           EntityResolutionDecision[]
+
+  @@index([organizationId, extractedFieldId, rank])
+}
+
+model EntityResolutionDecision {
+  id               String                     @id @default(cuid())
+  organizationId   String
+  extractedFieldId String
+  evidenceId       String?
+  status           ResolutionDecisionStatus
+  action           ResolutionDecisionAction   @default(DEFER)
+  decidedBy        String
+  reason           String?
+  supersedesId     String?
+  decidedAt        DateTime                   @default(now())
+  organization     Organization               @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  extractedField   ExtractedField             @relation(fields: [extractedFieldId], references: [id], onDelete: Restrict)
+  evidence         EntityResolutionEvidence?  @relation(fields: [evidenceId], references: [id], onDelete: Restrict)
+  supersedes       EntityResolutionDecision?  @relation("DecisionSupersession", fields: [supersedesId], references: [id], onDelete: Restrict)
+  supersededBy     EntityResolutionDecision[] @relation("DecisionSupersession")
+
+  @@index([organizationId, extractedFieldId, decidedAt])
+}
+
+model Invoice {
+  id                      String                  @id @default(cuid())
+  organizationId          String
+  issuerPartyId           String
+  billedToPartyId         String?
+  buildingId              String?
+  sourceDocumentId        String?
+  invoiceNumber           String
+  issuedAt                DateTime
+  dueAt                   DateTime
+  currency                String                  @db.Char(3)
+  totalAmount             Decimal                 @db.Decimal(18, 2)
+  state                   InvoiceState            @default(ISSUED)
+  createdAt               DateTime                @default(now())
+  organization            Organization            @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  issuer                  Party                   @relation("InvoiceIssuer", fields: [issuerPartyId], references: [id], onDelete: Restrict)
+  billedTo                Party?                  @relation("InvoiceBilledTo", fields: [billedToPartyId], references: [id], onDelete: Restrict)
+  building                Building?               @relation(fields: [buildingId], references: [id], onDelete: Restrict)
+  sourceDocument          SourceDocument?         @relation(fields: [sourceDocumentId], references: [id], onDelete: Restrict)
+  receivable              Receivable?
+  acceptedImportCandidate InvoiceImportCandidate?
+
+  @@unique([organizationId, issuerPartyId, invoiceNumber])
+  @@index([organizationId, dueAt])
+  @@index([organizationId, billedToPartyId])
+  @@index([organizationId, buildingId])
+}
+
+model Receivable {
+  id             String                     @id @default(cuid())
+  organizationId String
+  invoiceId      String                     @unique
+  currency       String                     @db.Char(3)
+  openedAt       DateTime
+  closedAt       DateTime?
+  organization   Organization               @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  invoice        Invoice                    @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
+  entries        ReceivableLedgerEntry[]
+  caseLinks      CollectionCaseReceivable[]
+  legalFlags     LegalReviewFlag[]
+
+  @@index([organizationId, currency, openedAt])
+}
+
+model ReceivableLedgerEntry {
+  id              String                  @id @default(cuid())
+  organizationId  String
+  receivableId    String
+  type            ReceivableEntryType
+  amount          Decimal                 @db.Decimal(18, 2)
+  currency        String                  @db.Char(3)
+  effectiveAt     DateTime
+  evidenceRef     String
+  idempotencyKey  String
+  createdBy       String
+  createdAt       DateTime                @default(now())
+  reversesEntryId String?
+  organization    Organization            @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  receivable      Receivable              @relation(fields: [receivableId], references: [id], onDelete: Restrict)
+  reverses        ReceivableLedgerEntry?  @relation("LedgerReversal", fields: [reversesEntryId], references: [id], onDelete: Restrict)
+  reversedBy      ReceivableLedgerEntry[] @relation("LedgerReversal")
+
+  @@unique([organizationId, idempotencyKey])
+  @@index([organizationId, receivableId, effectiveAt])
+}
+
+model CollectionCase {
+  id              String                     @id @default(cuid())
+  organizationId  String
+  partyId         String?
+  buildingId      String?
+  currency        String                     @db.Char(3)
+  status          CollectionCaseStatus       @default(OPEN)
+  openedAt        DateTime
+  organization    Organization               @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  party           Party?                     @relation(fields: [partyId], references: [id], onDelete: Restrict)
+  building        Building?                  @relation(fields: [buildingId], references: [id], onDelete: Restrict)
+  receivableLinks CollectionCaseReceivable[]
+  events          CollectionEvent[]
+  promises        PromiseToPay[]
+  reviewTasks     ReviewTask[]
+  legalFlags      LegalReviewFlag[]
+
+  @@index([organizationId, status, currency])
+}
+
+model CollectionCaseReceivable {
+  id             String         @id @default(cuid())
+  organizationId String
+  caseId         String
+  receivableId   String
+  linkedAt       DateTime       @default(now())
+  organization   Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  case           CollectionCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  receivable     Receivable     @relation(fields: [receivableId], references: [id], onDelete: Restrict)
+
+  @@unique([organizationId, caseId, receivableId])
+}
+
+model CollectionEvent {
+  id             String              @id @default(cuid())
+  organizationId String
+  caseId         String
+  type           CollectionEventType
+  occurredAt     DateTime
+  recordedAt     DateTime            @default(now())
+  recordedBy     String
+  evidenceRef    String
+  payload        Json?
+  organization   Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  case           CollectionCase      @relation(fields: [caseId], references: [id], onDelete: Restrict)
+
+  @@index([organizationId, caseId, occurredAt])
+}
+
+model PromiseToPay {
+  id             String         @id @default(cuid())
+  organizationId String
+  caseId         String
+  amount         Decimal        @db.Decimal(18, 2)
+  currency       String         @db.Char(3)
+  promisedFor    DateTime
+  status         PromiseStatus
+  recordedAt     DateTime       @default(now())
+  recordedBy     String
+  evidenceRef    String
+  organization   Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  case           CollectionCase @relation(fields: [caseId], references: [id], onDelete: Restrict)
+
+  @@index([organizationId, status, promisedFor])
+}
+
+model ReviewTask {
+  id             String           @id @default(cuid())
+  organizationId String
+  caseId         String?
+  type           ReviewTaskType
+  status         ReviewTaskStatus @default(OPEN)
+  reasonCode     String
+  evidenceRefs   String[]
+  createdAt      DateTime         @default(now())
+  resolvedAt     DateTime?
+  resolvedBy     String?
+  organization   Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  case           CollectionCase?  @relation(fields: [caseId], references: [id], onDelete: Restrict)
+
+  @@index([organizationId, status, type])
+}
+
+model LegalReviewFlag {
+  id             String                @id @default(cuid())
+  organizationId String
+  caseId         String?
+  receivableId   String?
+  status         LegalReviewFlagStatus @default(RECOMMENDED)
+  policyKey      String
+  policyVersion  String
+  reason         String
+  thresholdDays  Int
+  observedDays   Int
+  asOf           DateTime
+  evidenceRefs   String[]
+  createdAt      DateTime              @default(now())
+  reviewedAt     DateTime?
+  reviewedBy     String?
+  organization   Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  case           CollectionCase?       @relation(fields: [caseId], references: [id], onDelete: Restrict)
+  receivable     Receivable?           @relation(fields: [receivableId], references: [id], onDelete: Restrict)
+
+  @@index([organizationId, status, asOf])
+}

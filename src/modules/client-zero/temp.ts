@@ -1,0 +1,3 @@
+import{mkdir,mkdtemp,rm,writeFile}from"node:fs/promises";import path from"node:path";
+export async function withPrivateTemp<T>(projectRoot:string,work:(dir:string)=>Promise<T>):Promise<T>{const base=path.resolve(projectRoot,".private/client-zero/temp");await mkdir(base,{recursive:true,mode:0o700});const dir=await mkdtemp(path.join(base,"run-"));try{return await work(dir);}finally{await rm(dir,{recursive:true,force:true});}}
+export async function writePrivateTemp(dir:string,name:string,bytes:Uint8Array):Promise<string>{if(path.basename(name)!==name)throw new Error("UNSAFE_TEMP_FILENAME");const target=path.join(dir,name);await writeFile(target,bytes,{mode:0o600});return target;}

@@ -1,0 +1,3 @@
+import type{OperationalPolicy}from"./policy";import{prioritizeCase}from"./prioritize";import type{AttentionItem,OperationalCase,PriorityTier}from"./types";
+const tier:Record<PriorityTier,number>={CRITICAL:0,HIGH:1,MEDIUM:2,LOW:3};
+export function attentionOfToday(org:string,cases:readonly OperationalCase[],policy:OperationalPolicy):readonly AttentionItem[]{return cases.filter(c=>c.organizationId===org).map(c=>({item:prioritizeCase(c,policy),source:c})).filter(x=>x.item.attentionType!=="NO_ACTION").sort((a,b)=>tier[a.item.priorityTier]-tier[b.item.priorityTier]||b.source.oldestDaysOverdue.value-a.source.oldestDaysOverdue.value||b.item.outstandingCents-a.item.outstandingCents||a.item.caseId.localeCompare(b.item.caseId)).slice(0,policy.maxAttentionItems).map(x=>x.item);}

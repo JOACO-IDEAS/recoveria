@@ -1,0 +1,3 @@
+import type{ImportBatchResult}from"@/modules/ingestion/types";
+export interface SanitizedClientZeroReport{simulation:boolean;documentsReceived:number;documentsParsed:number;invoiceCandidates:number;reviewRequired:number;duplicates:number;unsupportedDocuments:number;failures:number;screenshotsGenerated:0}
+export function sanitizedReport(batch:ImportBatchResult,simulation:boolean):SanitizedClientZeroReport{return{simulation,documentsReceived:batch.documentsReceived,documentsParsed:batch.documentsParsed,invoiceCandidates:batch.invoiceCandidates,reviewRequired:batch.reviewRequired,duplicates:batch.duplicates,unsupportedDocuments:batch.unsupportedDocuments,failures:batch.failures,screenshotsGenerated:0};}
