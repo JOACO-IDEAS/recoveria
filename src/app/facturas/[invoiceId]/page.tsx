@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { PageHeader } from "@/components/app-shell";
 import { Badge, date, money } from "@/components/ui";
-import { attentionLabel, invoiceStatusLabel, ledgerLabel } from "@/lib/demo/presentation";
+import { attentionLabel, evidenceLabel, invoiceStatusLabel, ledgerLabel } from "@/lib/demo/presentation";
 import { demoModel as m } from "@/lib/demo/product-model";
 
 export default async function InvoiceDetail({ params }: { params: Promise<{ invoiceId: string }> }) {
@@ -21,10 +21,10 @@ export default async function InvoiceDetail({ params }: { params: Promise<{ invo
     </div>
     <div className="detail-grid">
       <section className="section"><div className="section-title"><div><span>ASOCIACIÓN</span><h2>Por qué aparece aquí</h2></div></div>
-        <p><strong>Administración:</strong> {invoice.entityName}</p><p><strong>Consorcio:</strong> {invoice.buildingName}</p>
+        <p><strong>Administración:</strong> {invoice.administrationId?<Link className="link" href={`/cartera/${invoice.administrationId}`}>{invoice.entityName}</Link>:invoice.entityName}</p><p><strong>Consorcio:</strong> {invoice.buildingName}</p>
         {invoice.reviewRequired && <div className="callout">La asociación requiere revisión: la evidencia no está confirmada.</div>}
-        <details className="disclosure"><summary>Ver evidencia y movimientos</summary><p className="evidence">{invoice.evidenceRef}</p>
-        <h3>Movimientos relevantes</h3>{invoice.ledgerEntries.map((entry) => <p key={entry.id}><strong>{ledgerLabel(entry.type)}</strong> · {money(entry.amountCents)}<br/><small>{date(entry.effectiveAt)} · {entry.evidenceRef}</small></p>)}</details>
+        <details className="disclosure"><summary>Ver evidencia y movimientos</summary><p className="evidence">{evidenceLabel(invoice.evidenceRef)}</p>
+        <h3>Movimientos relevantes</h3>{invoice.ledgerEntries.map((entry) => <p key={entry.id}><strong>{ledgerLabel(entry.type)}</strong> · {money(entry.amountCents)}<br/><small>{date(entry.effectiveAt)} · {evidenceLabel(entry.evidenceRef)}</small></p>)}</details>
       </section>
       <section className="section"><div className="section-title"><div><span>CASO</span><h2>Trabajo relacionado</h2></div></div>
         {entries.map((item) => <p key={item.id}><Link className="link" href={`/casos/${item.id}`}>Revisar caso</Link><br/><small>{attentionLabel(item.recommendation.attentionType)}</small></p>)}
