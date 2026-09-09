@@ -1,0 +1,42 @@
+# Private and real-data boundaries
+.private/
+private/
+client-zero-private/
+data/
+imports/
+uploads/
+reports/client-zero/
+screenshots/client-zero/
+*client-zero-sensitive-report*
+
+# Local configuration and credentials
+.env
+.env.*
+!.env.example
+credentials*
+*secret*
+*.pem
+*.key
+
+# Local build, dependency, database, and QA artifacts
+node_modules/
+.next/
+out/
+coverage/
+*.db
+*.db-journal
+*.log
+*.tsbuildinfo
+screenshots/
+reports/
+
+# Local tooling/session state
+.git/
+.vercel/
+.omc/
+.codex/
+AGENTS.md
+CLAUDE.md
+.DS_Store
+.idea/
+.vscode/
