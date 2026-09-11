@@ -21,6 +21,8 @@ export type NextAction =
   | "PREPARE_LEGAL_REVIEW"
   | "CLOSE_CASE";
 
+export type HumanDecisionOperation = "CONFIRM_PAYMENT" | "OPEN_DISPUTE" | "RESOLVE_DISPUTE";
+
 export type CollectionEventType =
   | "CASE_OPENED"
   | "CASE_REVIEWED"
@@ -97,8 +99,10 @@ export interface HumanDecision {
   readonly organizationId: string;
   readonly caseId: string;
   readonly recommendationId: string;
+  readonly recommendationFingerprint: string;
   readonly recommendedAction: NextAction;
   readonly chosenAction: NextAction;
+  readonly operation?: HumanDecisionOperation;
   readonly diverged: boolean;
   readonly actorId: string;
   readonly decidedAt: string;

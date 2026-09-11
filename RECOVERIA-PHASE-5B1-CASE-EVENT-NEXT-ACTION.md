@@ -34,6 +34,22 @@ The synthetic truth set proves routine overdue/contact, active promise/wait, bro
 
 Every projection and write takes explicit tenant context and rejects cross-tenant cases, invoices, events, or decisions. Reasons and conditions carry evidence references. No Client Zero data, external service, or model provider participates.
 
+## Phase 5B.1A Safety Hardening
+
+Material events now require a unique real `HumanDecision` in the supplied in-memory decision registry. The decision tenant, case and human actor must match the event; a truthy or fabricated decision ID is insufficient. `applyHumanDecision()` reprojects the supplied current case before writing and rejects stale recommendations or actions that are incoherent with the current workflow and blockers.
+
+The sanctioned material paths now include explicit payment confirmation, dispute opening and dispute resolution. `VERIFY_PAYMENT` remains an investigative next action: only the separate `CONFIRM_PAYMENT` human operation can append `PAYMENT_VERIFIED`, and it must reference a real effective payment claim with compatible invoice scope. The similarly bounded `OPEN_DISPUTE` and `RESOLVE_DISPUTE` operations require `REVIEW_DISPUTE` and an in-case invoice; resolution must target a currently disputed invoice. These operations do not expand the recommendation taxonomy.
+
+Corrections remain append-only and now obey explicit invariants: the superseded event must exist in the same tenant and case, invoice scope is preserved, event types must match, and materiality is inherited for authorization purposes. Supersession is a linear chain (`A → B → C`); a second correction branching directly from an already superseded event is rejected.
+
+Safety context precedes collection urgency. A broken promise attached to a disputed invoice routes to dispute review rather than follow-up. Legal-review preparation may remain the case-level recommendation, but an active dispute is included as an evidence-linked blocker. A zero financial balance remains visible as a fact, while an open dispute or unverified payment claim keeps the workflow in review and prevents a silent clean-close recommendation.
+
+Persistence, durable idempotency, optimistic concurrency, multi-operator locking, network retries, communication send states, pre-send revalidation, full recommendation versioning, and real-world promise/dispute models remain deferred.
+
+### Persistence vocabulary reconciliation prerequisite
+
+**Persistence vocabulary reconciliation required before collections-engine persistence is implemented.** The existing Prisma schema already represents `CollectionCase`, `CollectionEvent`, `PromiseToPay`, and `LegalReviewFlag`, while the TypeScript engine uses its own bounded workflow states, composable conditions, event types, decision operations and recommendation actions. Their names, lifecycle semantics, relationships, actor/decision authorization metadata, correction/supersession semantics, and invoice scope have not yet been mapped. No Prisma model or migration is changed in 5B.1A; an explicit reconciliation design is a prerequisite for a future persistence phase.
+
 ## Client Zero unknowns
 
 Cadence, channel choice, message approval, promise-capture UX, payment-verification operations, dispute frequency, and legal-escalation practice remain open validation questions. No assumptions about them are encoded in 5B.1.

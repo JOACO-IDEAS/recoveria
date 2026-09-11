@@ -53,17 +53,20 @@ export function projectCollectionCase(input: ProjectionInput): CaseProjection {
   const waiting = latest(events, ["WAIT_STARTED", "WAIT_ENDED"])?.type === "WAIT_STARTED";
   const has = (condition: CaseCondition) => conditions.some(item => item.condition === condition);
   let workflowState: CaseProjection["workflowState"] = "WORKABLE";
-  if (outstandingCents === 0 || closed) workflowState = "RESOLVED";
+  const hasUnresolvedOperationalCondition = has("HAS_DISPUTED_INVOICE") || has("HAS_PAYMENT_TO_VERIFY");
+  if ((outstandingCents === 0 && !hasUnresolvedOperationalCondition) || closed) workflowState = "RESOLVED";
   else if (has("ENTITY_UNCERTAIN") || has("HAS_PAYMENT_TO_VERIFY") || (has("HAS_DISPUTED_INVOICE") && collectible.length === 0)) workflowState = "REVIEW_REQUIRED";
   else if (has("HAS_ACTIVE_PROMISE") || waiting) workflowState = "WAITING_FOR_RESPONSE";
 
   let action: NextAction;
   let reason: RecommendationReason;
   const blockers: RecommendationReason[] = [];
+  const promiseInvoiceIsDisputed = Boolean(promise?.relatedInvoiceId && disputeByInvoice.get(promise.relatedInvoiceId));
   if (workflowState === "RESOLVED") [action, reason] = ["CLOSE_CASE", { code: "ZERO_BALANCE", text: "El caso no tiene saldo pendiente", evidenceRefs: input.evidenceRefs }];
   else if (has("ENTITY_UNCERTAIN")) [action, reason] = ["REVIEW_CASE", { code: "ENTITY_UNCERTAIN", text: "Confirmar la identidad antes de continuar", evidenceRefs: input.evidenceRefs }];
   else if (has("HAS_PAYMENT_TO_VERIFY")) [action, reason] = ["VERIFY_PAYMENT", { code: "PAYMENT_TO_VERIFY", text: "Verificar el pago informado sin modificar el saldo", evidenceRefs: pendingClaims.flatMap(event => event.evidenceRefs) }];
   else if (has("LEGAL_REVIEW_THRESHOLD")) [action, reason] = ["PREPARE_LEGAL_REVIEW", { code: "LEGAL_REVIEW_THRESHOLD", text: "Preparar una revisión legal interna", evidenceRefs: input.evidenceRefs }];
+  else if (has("HAS_BROKEN_PROMISE") && promiseInvoiceIsDisputed) [action, reason] = ["REVIEW_DISPUTE", { code: "DISPUTED_PROMISE", text: "Revisar la disputa antes de retomar el cobro de la promesa", evidenceRefs: evidence([...(promise?.evidenceRefs ?? []), ...disputed.flatMap(invoice => invoice.evidenceRefs)]) }];
   else if (has("HAS_BROKEN_PROMISE")) [action, reason] = ["FOLLOW_UP", { code: "BROKEN_PROMISE", text: "Retomar seguimiento por promesa vencida", evidenceRefs: promise?.evidenceRefs ?? [] }];
   else if (has("HAS_ACTIVE_PROMISE") || waiting) [action, reason] = ["WAIT", { code: "WAITING", text: "Esperar antes de un nuevo contacto", evidenceRefs: promise?.evidenceRefs ?? events.filter(event => event.type === "WAIT_STARTED").flatMap(event => event.evidenceRefs) }];
   else if (has("MISSING_CONTACT")) [action, reason] = ["REQUEST_INFORMATION", { code: "MISSING_CONTACT", text: "Obtener un contacto confirmado", evidenceRefs: input.evidenceRefs }];
@@ -72,6 +75,7 @@ export function projectCollectionCase(input: ProjectionInput): CaseProjection {
 
   if (has("ENTITY_UNCERTAIN")) blockers.push({ code: "ENTITY_BLOCKER", text: "La identidad debe confirmarse", evidenceRefs: input.evidenceRefs });
   if (has("HAS_PAYMENT_TO_VERIFY")) blockers.push({ code: "PAYMENT_BLOCKER", text: "El pago informado no altera el saldo hasta verificarse", evidenceRefs: pendingClaims.flatMap(event => event.evidenceRefs) });
+  if (has("HAS_DISPUTED_INVOICE") && (has("LEGAL_REVIEW_THRESHOLD") || has("HAS_BROKEN_PROMISE"))) blockers.push({ code: "DISPUTE_BLOCKER", text: "La disputa activa debe considerarse antes de cualquier acción de cobro", evidenceRefs: disputed.flatMap(invoice => invoice.evidenceRefs) });
   const priority: CaseProjection["priority"] = workflowState === "RESOLVED" || action === "WAIT" ? "LOW" : has("HAS_BROKEN_PROMISE") || has("HAS_PAYMENT_TO_VERIFY") || has("LEGAL_REVIEW_THRESHOLD") ? "CRITICAL" : action === "CONTACT" ? "MEDIUM" : "HIGH";
   const recommendationEvidence = evidence([...(reason.evidenceRefs), ...blockers.flatMap(item => item.evidenceRefs)]);
   const recommendation = deepFreeze({ id: `rec:${input.case.id}:${input.asOf}:${COLLECTIONS_POLICY_VERSION}`, organizationId: input.organizationId, caseId: input.case.id, action, reasons: [reason], blockers, evidenceRefs: recommendationEvidence, generatedAt: input.asOf, policyVersion: COLLECTIONS_POLICY_VERSION });
