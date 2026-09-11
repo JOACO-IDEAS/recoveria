@@ -36,3 +36,5 @@
 /reports/client-zero/**
 /screenshots/client-zero/**
 *client-zero-sensitive-report*
+.vercel
+.env*
