@@ -62,6 +62,7 @@ export interface ContactEligibilityCandidate {
   readonly relationshipStatus: ContactRelationshipStatus;
   readonly scope: ContactRelationshipScope;
   readonly buildingIds: readonly string[];
+  readonly channels: readonly ContactChannel[];
   readonly eligibleChannels: readonly ContactChannel[];
   readonly disposition: "READY" | "REVIEW_REQUIRED" | "INELIGIBLE";
   readonly blockers: readonly string[];

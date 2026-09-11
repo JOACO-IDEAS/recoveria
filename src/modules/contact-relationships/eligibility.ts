@@ -53,7 +53,8 @@ export function resolveCollectionContacts(collectionCase: ContactScopedCase, con
   const channelsByContact = new Map<string, typeof context.channels>();
   for (const contact of context.contacts) channelsByContact.set(contact.id, context.channels.filter(channel => channel.contactId === contact.id));
   const evaluated: ContactEligibilityCandidate[] = [];
-  for (const relationship of effectiveContactRelationships(context.relationships).filter(item => item.administrationId === context.administrationId)) {
+  const supersededRelationshipIds = new Set(context.relationships.map(item => item.supersedesRelationshipId).filter((id): id is string => Boolean(id)));
+  for (const relationship of context.relationships.filter(item => item.administrationId === context.administrationId)) {
     const contact = contacts.get(relationship.contactId)!;
     const allChannels = channelsByContact.get(contact.id) ?? [];
     const eligibleChannels = allChannels.filter(channel => channel.status === "CONFIRMED");
@@ -61,14 +62,15 @@ export function resolveCollectionContacts(collectionCase: ContactScopedCase, con
     const scopeMatches = relationship.scope === "ADMINISTRATION_WIDE" || relationship.buildingIds.includes(context.buildingId);
     if (!scopeMatches) blockers.push("BUILDING_SCOPE_MISMATCH");
     if (!validOn(relationship, context.asOf)) blockers.push("RELATIONSHIP_OUTSIDE_VALIDITY");
-    if (relationship.status === "INVALID" || relationship.status === "SUPERSEDED") blockers.push("RELATIONSHIP_NOT_VALID");
+    if (supersededRelationshipIds.has(relationship.id) || relationship.status === "SUPERSEDED") blockers.push("SUPERSEDED");
+    if (relationship.status === "INVALID") blockers.push("RELATIONSHIP_NOT_VALID");
     if (relationship.status === "CONFLICTING" || relationship.roleStatus === "CONFLICTING" || contact.status === "CONFLICTING") blockers.push("CONFLICTING_EVIDENCE");
     if (contact.status === "UNVERIFIED") blockers.push("IDENTITY_UNVERIFIED");
     if (relationship.status === "UNVERIFIED" || relationship.roleStatus === "UNVERIFIED") blockers.push("RELATIONSHIP_UNVERIFIED");
     if (!eligibleChannels.length) blockers.push(allChannels.some(channel => channel.status === "STALE") ? "CHANNEL_STALE" : allChannels.some(channel => channel.status === "UNVERIFIED") ? "CHANNEL_UNVERIFIED" : allChannels.some(channel => channel.status === "INVALID") ? "CHANNEL_INVALID" : "NO_VALID_CHANNEL");
-    const hardBlockers = new Set(["BUILDING_SCOPE_MISMATCH", "RELATIONSHIP_OUTSIDE_VALIDITY", "RELATIONSHIP_NOT_VALID", "CHANNEL_INVALID", "NO_VALID_CHANNEL"]);
+    const hardBlockers = new Set(["SUPERSEDED", "BUILDING_SCOPE_MISMATCH", "RELATIONSHIP_OUTSIDE_VALIDITY", "RELATIONSHIP_NOT_VALID", "CHANNEL_INVALID", "NO_VALID_CHANNEL"]);
     const disposition = blockers.some(blocker => hardBlockers.has(blocker)) ? "INELIGIBLE" : blockers.length ? "REVIEW_REQUIRED" : "READY";
-    evaluated.push(deepFreeze({ contact, role: relationship.role, relationshipId: relationship.id, relationshipStatus: relationship.status, scope: relationship.scope, buildingIds: [...relationship.buildingIds], eligibleChannels, disposition, blockers: unique(blockers), evidenceRefs: unique([...contact.evidenceRefs, ...allChannels.flatMap(channel => channel.evidenceRefs), ...relationship.evidenceRefs]) }));
+    evaluated.push(deepFreeze({ contact, role: relationship.role, relationshipId: relationship.id, relationshipStatus: relationship.status, scope: relationship.scope, buildingIds: [...relationship.buildingIds], channels: allChannels, eligibleChannels, disposition, blockers: unique(blockers), evidenceRefs: unique([...contact.evidenceRefs, ...allChannels.flatMap(channel => channel.evidenceRefs), ...relationship.evidenceRefs]) }));
   }
   evaluated.sort((a, b) => a.contact.displayName.localeCompare(b.contact.displayName) || a.relationshipId.localeCompare(b.relationshipId));
   const result = { organizationId: context.organizationId, caseId: collectionCase.id, buildingId: context.buildingId, administrationId: collectionCase.administrationId, readyContacts: evaluated.filter(item => item.disposition === "READY"), reviewRequiredContacts: evaluated.filter(item => item.disposition === "REVIEW_REQUIRED"), ineligibleContacts: evaluated.filter(item => item.disposition === "INELIGIBLE"), blockers: unique(evaluated.length ? evaluated.flatMap(item => item.blockers) : ["NO_CONTACT_RELATIONSHIP"]) };

@@ -41,12 +41,11 @@ export function projectCollectionCase(input: ProjectionInput): CaseProjection {
   const pendingClaims = claimEvents.filter(event => !verifiedClaimIds.has(event.id));
   if (pendingClaims.length) add("HAS_PAYMENT_TO_VERIFY", "Existe un pago informado que todavía no fue confirmado", pendingClaims.flatMap(event => event.evidenceRefs), pendingClaims.flatMap(event => event.relatedInvoiceId ? [event.relatedInvoiceId] : []));
 
-  const promise = latest(events, ["PROMISE_RECORDED"]);
-  const promisedFor = typeof promise?.data?.promisedFor === "string" ? promise.data.promisedFor : undefined;
-  if (promise && promisedFor) {
-    if (promisedFor < input.asOf.slice(0, 10)) add("HAS_BROKEN_PROMISE", `La promesa venció el ${promisedFor}`, promise.evidenceRefs);
-    else add("HAS_ACTIVE_PROMISE", `Existe una promesa vigente hasta el ${promisedFor}`, promise.evidenceRefs);
-  }
+  const promiseEvents = events.filter(event => event.type === "PROMISE_RECORDED" && typeof event.data?.promisedFor === "string");
+  const brokenPromises = promiseEvents.filter(event => String(event.data?.promisedFor) < input.asOf.slice(0, 10));
+  const activePromises = promiseEvents.filter(event => String(event.data?.promisedFor) >= input.asOf.slice(0, 10));
+  if (brokenPromises.length) add("HAS_BROKEN_PROMISE", "Existen promesas vencidas sin cumplimiento confirmado", brokenPromises.flatMap(event => event.evidenceRefs), brokenPromises.flatMap(event => event.relatedInvoiceId ? [event.relatedInvoiceId] : []));
+  if (activePromises.length) add("HAS_ACTIVE_PROMISE", "Existen promesas vigentes", activePromises.flatMap(event => event.evidenceRefs), activePromises.flatMap(event => event.relatedInvoiceId ? [event.relatedInvoiceId] : []));
   if (input.legalReviewThreshold) add("LEGAL_REVIEW_THRESHOLD", "El caso alcanzó el umbral de revisión legal interna", input.evidenceRefs);
 
   const closed = events.some(event => event.type === "CASE_CLOSED");
@@ -61,14 +60,14 @@ export function projectCollectionCase(input: ProjectionInput): CaseProjection {
   let action: NextAction;
   let reason: RecommendationReason;
   const blockers: RecommendationReason[] = [];
-  const promiseInvoiceIsDisputed = Boolean(promise?.relatedInvoiceId && disputeByInvoice.get(promise.relatedInvoiceId));
+  const disputedBrokenPromises = brokenPromises.filter(event => event.relatedInvoiceId && disputeByInvoice.get(event.relatedInvoiceId));
   if (workflowState === "RESOLVED") [action, reason] = ["CLOSE_CASE", { code: "ZERO_BALANCE", text: "El caso no tiene saldo pendiente", evidenceRefs: input.evidenceRefs }];
   else if (has("ENTITY_UNCERTAIN")) [action, reason] = ["REVIEW_CASE", { code: "ENTITY_UNCERTAIN", text: "Confirmar la identidad antes de continuar", evidenceRefs: input.evidenceRefs }];
   else if (has("HAS_PAYMENT_TO_VERIFY")) [action, reason] = ["VERIFY_PAYMENT", { code: "PAYMENT_TO_VERIFY", text: "Verificar el pago informado sin modificar el saldo", evidenceRefs: pendingClaims.flatMap(event => event.evidenceRefs) }];
   else if (has("LEGAL_REVIEW_THRESHOLD")) [action, reason] = ["PREPARE_LEGAL_REVIEW", { code: "LEGAL_REVIEW_THRESHOLD", text: "Preparar una revisión legal interna", evidenceRefs: input.evidenceRefs }];
-  else if (has("HAS_BROKEN_PROMISE") && promiseInvoiceIsDisputed) [action, reason] = ["REVIEW_DISPUTE", { code: "DISPUTED_PROMISE", text: "Revisar la disputa antes de retomar el cobro de la promesa", evidenceRefs: evidence([...(promise?.evidenceRefs ?? []), ...disputed.flatMap(invoice => invoice.evidenceRefs)]) }];
-  else if (has("HAS_BROKEN_PROMISE")) [action, reason] = ["FOLLOW_UP", { code: "BROKEN_PROMISE", text: "Retomar seguimiento por promesa vencida", evidenceRefs: promise?.evidenceRefs ?? [] }];
-  else if (has("HAS_ACTIVE_PROMISE") || waiting) [action, reason] = ["WAIT", { code: "WAITING", text: "Esperar antes de un nuevo contacto", evidenceRefs: promise?.evidenceRefs ?? events.filter(event => event.type === "WAIT_STARTED").flatMap(event => event.evidenceRefs) }];
+  else if (disputedBrokenPromises.length) [action, reason] = ["REVIEW_DISPUTE", { code: "DISPUTED_PROMISE", text: "Revisar la disputa antes de retomar el cobro de la promesa", evidenceRefs: evidence([...disputedBrokenPromises.flatMap(event => event.evidenceRefs), ...disputed.flatMap(invoice => invoice.evidenceRefs)]) }];
+  else if (has("HAS_BROKEN_PROMISE")) [action, reason] = ["FOLLOW_UP", { code: "BROKEN_PROMISE", text: "Retomar seguimiento por promesa vencida", evidenceRefs: brokenPromises.flatMap(event => event.evidenceRefs) }];
+  else if (has("HAS_ACTIVE_PROMISE") || waiting) [action, reason] = ["WAIT", { code: "WAITING", text: "Esperar antes de un nuevo contacto", evidenceRefs: activePromises.length ? activePromises.flatMap(event => event.evidenceRefs) : events.filter(event => event.type === "WAIT_STARTED").flatMap(event => event.evidenceRefs) }];
   else if (has("MISSING_CONTACT")) [action, reason] = ["REQUEST_INFORMATION", { code: "MISSING_CONTACT", text: "Obtener un contacto confirmado", evidenceRefs: input.evidenceRefs }];
   else if (collectible.length) [action, reason] = ["CONTACT", { code: "OVERDUE_WORKABLE", text: "Contactar por facturas vencidas cobrables", evidenceRefs: collectible.flatMap(invoice => invoice.evidenceRefs) }];
   else [action, reason] = ["REVIEW_DISPUTE", { code: "DISPUTED_ONLY", text: "Revisar las facturas en disputa", evidenceRefs: disputed.flatMap(invoice => invoice.evidenceRefs) }];

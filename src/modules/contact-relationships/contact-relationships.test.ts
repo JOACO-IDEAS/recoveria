@@ -50,7 +50,9 @@ describe("Phase 5B.2A contact relationship foundation", () => {
     expect(history).toHaveLength(2);
     expect(effectiveContactRelationships(history).map(item => item.id)).toEqual(["rel-new"]);
     const context = contactContextOf({ contacts: [oldContact, nextContact], channels: [channelOf(oldContact.id, "old-channel"), channelOf(nextContact.id, "new-channel")], relationships: history });
-    expect(resolveCollectionContacts(contactCaseOf(), context).readyContacts.map(item => item.contact.id)).toEqual(["new"]);
+    const resolution = resolveCollectionContacts(contactCaseOf(), context);
+    expect(resolution.readyContacts.map(item => item.contact.id)).toEqual(["new"]);
+    expect(resolution.ineligibleContacts.find(item => item.contact.id === "old")?.blockers).toContain("SUPERSEDED");
   });
 
   it("uses explicit temporal validity without inventing staleness thresholds", () => {
