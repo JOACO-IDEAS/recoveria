@@ -39,3 +39,7 @@ Visual QA covers Inicio, all four operating lists, administration/invoice detail
 ## Known remaining gaps
 
 The existing synthetic scale does not require pagination or virtualization. The reserved case-action zone intentionally has no controls until a later approved product phase. No new backend behavior, communication channel or authentication surface is included.
+
+## Adversarial audit correction pass
+
+Case facts now derive neutral, positive, or critical presentation from the actual promise/dispute value; neutral portfolio states no longer inherit the attention-colored review flag. Confirmed and possible duplicates remain in the violet data-quality family but use visibly stronger and lighter treatments respectively. At exactly 390 × 844, all five Casos filters are reachable through the existing horizontal-scroll row. Level-4 raw values were verified—and their selector broadened where necessary—to use IBM Plex Mono without changing Levels 1–3.

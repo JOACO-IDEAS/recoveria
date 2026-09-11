@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
+import { caseFactTone, duplicateConfidenceTone, reviewFlagTone } from "./presentation";
 
 describe("Visual System V2 presentation contract", () => {
   it("defines distinct semantic tokens and approved type roles", async () => {
@@ -32,5 +33,23 @@ describe("Visual System V2 presentation contract", () => {
     expect(workspace.indexOf("<InvoiceFields")).toBeLessThan(workspace.indexOf("<Pipeline"));
     expect(workspace).toContain("displayText");
     expect(workspace).toContain("field-evidence");
+  });
+
+  it("maps case-fact values to their actual semantic severity", () => {
+    expect(caseFactTone("NONE")).toBe("neutral");
+    expect(caseFactTone("ACTIVE")).toBe("positive");
+    expect(caseFactTone("MISSED")).toBe("critical");
+    expect(caseFactTone("NONE", true)).toBe("critical");
+  });
+
+  it("keeps neutral portfolio states separate from real review flags", () => {
+    expect(reviewFlagTone("Sin acción necesaria")).toBe("neutral");
+    expect(reviewFlagTone("Revisar disputa")).toBe("attention");
+    expect(reviewFlagTone("Requiere revisión")).toBe("attention");
+  });
+
+  it("distinguishes confirmed and possible duplicates within data quality", () => {
+    expect(duplicateConfidenceTone("EXACT_DOCUMENT_DUPLICATE")).toBe("confirmed");
+    expect(duplicateConfidenceTone("POSSIBLE_BUSINESS_DUPLICATE")).toBe("possible");
   });
 });

@@ -37,6 +37,9 @@ export const ledgerLabel = (value: string) => ledgerLabels[value] ?? "Movimiento
 export const reviewReasonLabel = (value: string) => reviewReasonLabels[value] ?? "Necesita confirmación manual";
 export const documentLabel = (value: string) => `Documento ${value.match(/\d+/)?.[0] ?? "de demostración"}`;
 export const fieldStatusLabel = (value: string) => value === "VALID" ? "Confirmado" : value === "MISSING" ? "Falta información" : value === "AMBIGUOUS" ? "Necesita confirmación" : "Revisar";
+export const caseFactTone = (promise: string, dispute = false) => dispute || promise === "MISSED" ? "critical" : promise === "ACTIVE" || promise === "FULFILLED" ? "positive" : "neutral";
+export const reviewFlagTone = (value: string) => value === "Sin acción necesaria" ? "neutral" : "attention";
+export const duplicateConfidenceTone = (value: string) => value === "EXACT_DOCUMENT_DUPLICATE" ? "confirmed" : "possible";
 export const evidenceLabel = (value: string) => { const [kind, ...rest] = value.split(":"); const reference = rest.join(" · ").replaceAll("#", " · "); return `${kind === "doc" ? "Fuente: documento" : kind === "invoice" ? "Fuente: factura" : kind === "contact" ? "Fuente: contacto" : kind === "promise" ? "Fuente: compromiso" : "Fuente: registro"} ${reference}`; };
 export const filterOptions = [
   ["ALL", "Todas"], ["OVERDUE", "Vencidas"], ["CURRENT", "Al día"], ["PAID", "Pagadas"], ["DISPUTED", "En disputa"], ["REVIEW", "Requieren revisión"], ["OLDEST", "Más antiguas"],
