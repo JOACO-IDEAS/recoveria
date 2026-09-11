@@ -39,6 +39,8 @@ export interface ConfirmedPromisePayment {
   readonly amountCents: number;
   readonly confirmedAt: string;
   readonly financialEvidenceRefs: readonly string[];
+  /** Explicit deduplication link when this allocation represents the same payment as a verified claim. */
+  readonly paymentClaimId?: string;
 }
 
 export interface PaymentClaim {
@@ -74,7 +76,7 @@ export interface InvoiceDispute {
   readonly supersedesDisputeId?: string;
 }
 
-export interface DerivedPromise extends CanonicalPromise { readonly status: "ACTIVE" | "BROKEN" | "FULFILLED" | "SUPERSEDED"; readonly confirmedPaidCents: number }
+export interface DerivedPromise extends CanonicalPromise { readonly status: "ACTIVE" | "BROKEN" | "FULFILLED" | "SUPERSEDED"; readonly confirmedPaidCents: number; readonly fulfillmentEvidenceRefs: readonly string[]; readonly fulfillmentBlockers: readonly string[] }
 export interface DerivedPaymentClaim extends PaymentClaim { readonly status: "PENDING_VERIFICATION" | "VERIFIED" | "REJECTED" | "SUPERSEDED" }
 export interface DerivedDispute extends InvoiceDispute { readonly derivedStatus: "OPEN" | "RESOLVED" | "SUPERSEDED" }
 

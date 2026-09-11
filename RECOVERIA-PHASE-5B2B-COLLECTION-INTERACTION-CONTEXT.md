@@ -45,6 +45,16 @@ Existing ordered safety remains intact: a pending claim yields `VERIFY_PAYMENT`;
 
 The four-invoice synthetic case preserves simultaneously: an active promise on invoice A, an open dispute on B, a pending payment claim on C, and ordinary overdue debt on D. The context exposes all four; current precedence selects payment verification while retaining dispute, promise, and collectible-invoice evidence.
 
+## Phase 5B.2B.1 payment reconciliation hardening
+
+Pending multi-invoice claims now fan out one deterministic projection event per covered invoice. The event IDs retain claim and invoice identity, and `claimId` remains explicit projection metadata. Fan-out sorts invoice IDs before projection, so `[B, C]` and `[C, B]` produce the same protection: every claimed invoice is excluded from ordinary collectible invoices while unrelated overdue invoices remain independently collectible.
+
+Promise fulfillment now reconciles two sanctioned sources of confirmed truth: promise-specific `ConfirmedPromisePayment` allocations and human/decision-linked `PAYMENT_VERIFIED` events that reference a real current claim. A verified claim contributes only when it has an explicit positive amount, its invoices are contained within the promise scope, tenant and case match, the verification is human and decision-linked, and both claim and verification carry evidence. Equal amount, nearby date, shared contact, or shared administration are never matching criteria.
+
+For a multi-invoice promise, a subset-scoped verified claim may contribute safely attributable confirmed amount but cannot alone fulfill the whole promise; claim-driven fulfillment requires exact invoice scope and sufficient amount. Missing amount or non-exact/overlapping scope surfaces `VERIFIED_PAYMENT_ALLOCATION_UNCLEAR` and remains conservative. The financial ledger remains authoritative for balances—reconciliation changes only derived promise interpretation.
+
+Double counting is prevented deterministically. A `ConfirmedPromisePayment` may carry an explicit `paymentClaimId` when both representations describe the same underlying payment. Regardless, totals from the promise-allocation and verified-claim mechanisms are never added together; the projection uses the greater independently supported amount. This can intentionally undercount genuinely separate unlinked payments. Per-invoice allocation and a durable shared payment identity remain deferred P2 prerequisites before summing such sources can be safe.
+
 ## Human confirmation and correction boundary
 
 Canonical promises, claims, and disputes require non-empty human confirmation and evidence at runtime. Typed corrections require an existing same-tenant/same-case predecessor, compatible invoice scope, and a linear supersession chain; forks fail closed. Future AI may propose facts but cannot create canonical truth. No AI proposal mechanism exists in this phase.
@@ -61,4 +71,4 @@ No Prisma change or migration is made. Existing `CollectionEvent` and `PromiseTo
 
 Delivery evidence sources, response interpretation, promise capture conventions, payment-claim review, dispute taxonomy, fulfillment allocation, cadence, channel preference, operator roles, and escalation practice remain unvalidated Client Zero assumptions.
 
-Deferred to 5B.3+ are persistence, message drafting, sending, providers, inbox sync, scheduling, cadence, next-contact dates, automated reminders, contact-choice recommendations, invoice-level action queues, AI proposals, autonomous agents, legal execution, and real-data integration. This phase sends nothing and schedules nothing.
+Deferred to 5B.3+ are per-invoice payment allocation, write-time human-gate migration, Prisma reconciliation, persistence, message drafting, sending, providers, inbox sync, scheduling, cadence, next-contact dates, automated reminders, contact-choice recommendations, invoice-level action queues, AI proposals, autonomous agents, legal execution, and real-data integration. This phase sends nothing and schedules nothing.

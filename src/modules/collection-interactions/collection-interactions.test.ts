@@ -85,8 +85,8 @@ describe("Phase 5B.2B collection interaction context", () => {
     expect(context.openDisputes[0].invoiceId).toBe("invoice-b");
     expect(context.pendingPaymentClaims[0].invoiceIds).toEqual(["invoice-c"]);
     const projection = projectCollectionCaseWithInteractionContext({ projectionInput: { organizationId: context.organizationId, case: collectionCase, invoices: [invoiceOf("invoice-a"), invoiceOf("invoice-b"), invoiceOf("invoice-c"), invoiceOf("invoice-d")], contactAvailable: true, entityConfidence: "CONFIRMED", legalReviewThreshold: false, evidenceRefs: ["mixed:case"] }, interactionContext: context, collectionEvents: [] });
-    expect(projection.collectibleInvoiceIds).toEqual(["invoice-a", "invoice-c", "invoice-d"]);
-    expect(projection.excludedInvoiceIds).toEqual(["invoice-b"]);
+    expect(projection.collectibleInvoiceIds).toEqual(["invoice-a", "invoice-d"]);
+    expect(projection.excludedInvoiceIds).toEqual(["invoice-b", "invoice-c"]);
     expect(projection.conditions.map(item => item.condition)).toEqual(expect.arrayContaining(["HAS_ACTIVE_PROMISE", "HAS_DISPUTED_INVOICE", "HAS_PAYMENT_TO_VERIFY"]));
     expect(projection.recommendation).toMatchObject({ action: "VERIFY_PAYMENT", reasons: [{ code: "PAYMENT_TO_VERIFY" }] });
   });
@@ -135,5 +135,100 @@ describe("Phase 5B.2B collection interaction context", () => {
     const projection = projectCollectionCaseWithInteractionContext({ projectionInput: { organizationId: context.organizationId, case: collectionCase, invoices: [invoiceOf("invoice-a")], contactAvailable: true, entityConfidence: "CONFIRMED", legalReviewThreshold: false, evidenceRefs: ["safety:case"] }, interactionContext: context, collectionEvents: [eventOf(collectionCase.id, "opened", "CASE_OPENED")] });
     expect(projection.recommendation.action).toBe("REVIEW_DISPUTE");
     expect(projection.recommendation.blockers.map(item => item.code)).toContain("DISPUTE_BLOCKER");
+  });
+
+  it.each([["invoice-b", "invoice-c"], ["invoice-c", "invoice-b"]] as const)("fans out a pending multi-invoice claim independent of order: %s, %s", (first, second) => {
+    const collectionCase = interactionCaseOf(["invoice-a", "invoice-b", "invoice-c"]);
+    const context = deriveCollectionInteractionContext(interactionInput({ case: collectionCase, paymentClaims: [claimOf("claim-multi", { invoiceIds: [first, second] })] }));
+    const projection = projectCollectionCaseWithInteractionContext({ projectionInput: { organizationId: context.organizationId, case: collectionCase, invoices: [invoiceOf("invoice-a"), invoiceOf("invoice-b"), invoiceOf("invoice-c")], contactAvailable: true, entityConfidence: "CONFIRMED", legalReviewThreshold: false, evidenceRefs: ["multi:balance"] }, interactionContext: context, collectionEvents: [] });
+    expect(projection.conditions.find(item => item.condition === "HAS_PAYMENT_TO_VERIFY")?.relatedInvoiceIds).toEqual(["invoice-b", "invoice-c"]);
+    expect(projection.collectibleInvoiceIds).toEqual(["invoice-a"]);
+    expect(projection.excludedInvoiceIds).toEqual(["invoice-b", "invoice-c"]);
+  });
+
+  it("reconciles a sufficient sanctioned verified claim with a compatible promise", () => {
+    const promise = promiseOf("promise-paid", { promisedDate: "2026-09-09" });
+    const claim = claimOf("claim-paid", { claimedAmountCents: promise.amountCents });
+    const result = deriveCollectionInteractionContext(interactionInput({ promises: [promise], paymentClaims: [claim], collectionEvents: [verifiedEvent(claim.id)] }));
+    expect(result.fulfilledPromises[0]).toMatchObject({ id: promise.id, confirmedPaidCents: promise.amountCents, status: "FULFILLED" });
+    expect(result.brokenPromises).toHaveLength(0);
+    expect(result.fulfilledPromises[0].fulfillmentEvidenceRefs).toEqual(expect.arrayContaining(["fixture:5b2b:claim-paid", "fixture:5b2b:verified-claim-paid"]));
+  });
+
+  it("does not reconcile a verified claim from an unrelated invoice", () => {
+    const collectionCase = interactionCaseOf(["invoice-a", "invoice-b"]);
+    const promise = promiseOf("promise-a", { promisedDate: "2026-09-09", invoiceIds: ["invoice-a"] });
+    const claim = claimOf("claim-b", { invoiceIds: ["invoice-b"], claimedAmountCents: promise.amountCents });
+    const verification = { ...verifiedEvent(claim.id), relatedInvoiceId: "invoice-b" };
+    const result = deriveCollectionInteractionContext(interactionInput({ case: collectionCase, promises: [promise], paymentClaims: [claim], collectionEvents: [verification] }));
+    expect(result.brokenPromises[0]).toMatchObject({ id: promise.id, confirmedPaidCents: 0 });
+    expect(result.fulfilledPromises).toHaveLength(0);
+  });
+
+  it("keeps a promise broken when compatible verified payment is only partial", () => {
+    const promise = promiseOf("promise-partial-claim", { promisedDate: "2026-09-09", amountCents: 1_000_000_00 });
+    const claim = claimOf("claim-partial", { claimedAmountCents: 400_000_00 });
+    const result = deriveCollectionInteractionContext(interactionInput({ promises: [promise], paymentClaims: [claim], collectionEvents: [verifiedEvent(claim.id)] }));
+    expect(result.brokenPromises[0].confirmedPaidCents).toBe(400_000_00);
+    expect(result.fulfilledPromises).toHaveLength(0);
+  });
+
+  it("fulfills a multi-invoice promise only from explicitly compatible sufficient scope", () => {
+    const collectionCase = interactionCaseOf(["invoice-a", "invoice-b"]);
+    const promise = promiseOf("promise-ab", { invoiceIds: ["invoice-a", "invoice-b"], promisedDate: "2026-09-09", amountCents: 1_000_000_00 });
+    const partialClaim = claimOf("claim-a-only", { invoiceIds: ["invoice-a"], claimedAmountCents: 400_000_00 });
+    const partial = deriveCollectionInteractionContext(interactionInput({ case: collectionCase, promises: [promise], paymentClaims: [partialClaim], collectionEvents: [verifiedEvent(partialClaim.id)] }));
+    expect(partial.brokenPromises[0].confirmedPaidCents).toBe(400_000_00);
+    const singleInvoiceFullAmount = claimOf("claim-a-full-amount", { invoiceIds: ["invoice-a"], claimedAmountCents: promise.amountCents });
+    const ambiguous = deriveCollectionInteractionContext(interactionInput({ case: collectionCase, promises: [promise], paymentClaims: [singleInvoiceFullAmount], collectionEvents: [verifiedEvent(singleInvoiceFullAmount.id)] }));
+    expect(ambiguous.fulfilledPromises).toHaveLength(0);
+    expect(ambiguous.brokenPromises[0].fulfillmentBlockers).toContain("VERIFIED_PAYMENT_ALLOCATION_UNCLEAR");
+    const fullClaim = claimOf("claim-ab", { invoiceIds: ["invoice-a", "invoice-b"], claimedAmountCents: promise.amountCents });
+    const full = deriveCollectionInteractionContext(interactionInput({ case: collectionCase, promises: [promise], paymentClaims: [fullClaim], collectionEvents: [verifiedEvent(fullClaim.id)] }));
+    expect(full.fulfilledPromises[0].status).toBe("FULFILLED");
+  });
+
+  it("does not double count one payment represented by allocation and verified claim", () => {
+    const promise = promiseOf("promise-dedup", { promisedDate: "2026-09-09", amountCents: 800_000_00 });
+    const claim = claimOf("claim-dedup", { claimedAmountCents: 400_000_00 });
+    const allocation = promisePaymentOf(promise.id, 400_000_00, { paymentClaimId: claim.id });
+    const result = deriveCollectionInteractionContext(interactionInput({ promises: [promise], paymentClaims: [claim], confirmedPromisePayments: [allocation], collectionEvents: [verifiedEvent(claim.id)] }));
+    expect(result.brokenPromises[0].confirmedPaidCents).toBe(400_000_00);
+    expect(result.fulfilledPromises).toHaveLength(0);
+  });
+
+  it("uses the current payment claim after supersession while preserving chronology and rejecting forks", () => {
+    const original = claimOf("claim-old", { claimedAmountCents: 100_000_00 });
+    const replacement = claimOf("claim-new", { claimedAmountCents: 200_000_00, supersedesClaimId: original.id });
+    const result = deriveCollectionInteractionContext(interactionInput({ paymentClaims: [original, replacement] }));
+    expect(result.supersededPaymentClaims.map(item => item.id)).toEqual([original.id]);
+    expect(result.pendingPaymentClaims.map(item => item.id)).toEqual([replacement.id]);
+    expect(result.chronology.filter(item => item.kind === "PAYMENT_CLAIM")).toHaveLength(2);
+    const fork = claimOf("claim-fork", { supersedesClaimId: original.id });
+    expect(() => deriveCollectionInteractionContext(interactionInput({ paymentClaims: [original, replacement, fork] }))).toThrow(/Forked/);
+  });
+
+  it("preserves dispute protection when payment context exists on the same invoice", () => {
+    const claim = claimOf("claim-disputed");
+    const dispute = disputeOf("dispute-claim");
+    const context = deriveCollectionInteractionContext(interactionInput({ paymentClaims: [claim], disputes: [dispute] }));
+    const projection = projectCollectionCaseWithInteractionContext({ projectionInput: { organizationId: context.organizationId, case: interactionCaseOf(), invoices: [invoiceOf("invoice-a")], contactAvailable: true, entityConfidence: "CONFIRMED", legalReviewThreshold: false, evidenceRefs: ["claim-dispute"] }, interactionContext: context, collectionEvents: [] });
+    expect(projection.conditions.map(item => item.condition)).toEqual(expect.arrayContaining(["HAS_PAYMENT_TO_VERIFY", "HAS_DISPUTED_INVOICE"]));
+    expect(projection.excludedInvoiceIds).toEqual(["invoice-a"]);
+    expect(projection.recommendation.action).toBe("VERIFY_PAYMENT");
+    const verification = verifiedEvent(claim.id);
+    const verifiedContext = deriveCollectionInteractionContext(interactionInput({ paymentClaims: [claim], disputes: [dispute], collectionEvents: [verification] }));
+    const verifiedProjection = projectCollectionCaseWithInteractionContext({ projectionInput: { organizationId: verifiedContext.organizationId, case: interactionCaseOf(), invoices: [invoiceOf("invoice-a")], contactAvailable: true, entityConfidence: "CONFIRMED", legalReviewThreshold: false, evidenceRefs: ["verified-dispute"] }, interactionContext: verifiedContext, collectionEvents: [verification] });
+    expect(verifiedProjection.excludedInvoiceIds).toEqual(["invoice-a"]);
+    expect(verifiedProjection.recommendation.action).toBe("REVIEW_DISPUTE");
+  });
+
+  it("keeps zero-balance cases operationally unresolved while a multi-invoice claim is pending", () => {
+    const collectionCase = interactionCaseOf(["invoice-a", "invoice-b"]);
+    const context = deriveCollectionInteractionContext(interactionInput({ case: collectionCase, paymentClaims: [claimOf("claim-zero", { invoiceIds: ["invoice-a", "invoice-b"] })] }));
+    const projection = projectCollectionCaseWithInteractionContext({ projectionInput: { organizationId: context.organizationId, case: collectionCase, invoices: [invoiceOf("invoice-a", { outstandingCents: 0 }), invoiceOf("invoice-b", { outstandingCents: 0 })], contactAvailable: true, entityConfidence: "CONFIRMED", legalReviewThreshold: false, evidenceRefs: ["zero:ledger"] }, interactionContext: context, collectionEvents: [] });
+    expect(projection.outstandingCents).toBe(0);
+    expect(projection.workflowState).toBe("REVIEW_REQUIRED");
+    expect(projection.recommendation.action).toBe("VERIFY_PAYMENT");
   });
 });

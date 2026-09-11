@@ -29,7 +29,6 @@ export function projectCollectionCase(input: ProjectionInput): CaseProjection {
     if (event.type === "DISPUTE_RESOLVED") disputeByInvoice.set(event.relatedInvoiceId, false);
   }
   const disputed = invoices.filter(invoice => disputeByInvoice.get(invoice.id));
-  const collectible = invoices.filter(invoice => invoice.outstandingCents > 0 && invoice.daysOverdue > 0 && !disputeByInvoice.get(invoice.id));
   const outstandingCents = invoices.reduce((sum, invoice) => sum + invoice.outstandingCents, 0);
 
   if (input.entityConfidence !== "CONFIRMED") add("ENTITY_UNCERTAIN", "La identidad del caso necesita confirmación", input.evidenceRefs);
@@ -38,7 +37,9 @@ export function projectCollectionCase(input: ProjectionInput): CaseProjection {
 
   const claimEvents = events.filter(event => event.type === "PAYMENT_CLAIM_RECORDED");
   const verifiedClaimIds = new Set(events.filter(event => event.type === "PAYMENT_VERIFIED").map(event => String(event.data?.claimEventId ?? "")));
-  const pendingClaims = claimEvents.filter(event => !verifiedClaimIds.has(event.id));
+  const pendingClaims = claimEvents.filter(event => !verifiedClaimIds.has(String(event.data?.claimId ?? event.id)));
+  const pendingClaimInvoiceIds = new Set(pendingClaims.flatMap(event => event.relatedInvoiceId ? [event.relatedInvoiceId] : []));
+  const collectible = invoices.filter(invoice => invoice.outstandingCents > 0 && invoice.daysOverdue > 0 && !disputeByInvoice.get(invoice.id) && !pendingClaimInvoiceIds.has(invoice.id));
   if (pendingClaims.length) add("HAS_PAYMENT_TO_VERIFY", "Existe un pago informado que todavía no fue confirmado", pendingClaims.flatMap(event => event.evidenceRefs), pendingClaims.flatMap(event => event.relatedInvoiceId ? [event.relatedInvoiceId] : []));
 
   const promiseEvents = events.filter(event => event.type === "PROMISE_RECORDED" && typeof event.data?.promisedFor === "string");
@@ -78,5 +79,5 @@ export function projectCollectionCase(input: ProjectionInput): CaseProjection {
   const priority: CaseProjection["priority"] = workflowState === "RESOLVED" || action === "WAIT" ? "LOW" : has("HAS_BROKEN_PROMISE") || has("HAS_PAYMENT_TO_VERIFY") || has("LEGAL_REVIEW_THRESHOLD") ? "CRITICAL" : action === "CONTACT" ? "MEDIUM" : "HIGH";
   const recommendationEvidence = evidence([...(reason.evidenceRefs), ...blockers.flatMap(item => item.evidenceRefs)]);
   const recommendation = deepFreeze({ id: `rec:${input.case.id}:${input.asOf}:${COLLECTIONS_POLICY_VERSION}`, organizationId: input.organizationId, caseId: input.case.id, action, reasons: [reason], blockers, evidenceRefs: recommendationEvidence, generatedAt: input.asOf, policyVersion: COLLECTIONS_POLICY_VERSION });
-  return deepFreeze({ organizationId: input.organizationId, caseId: input.case.id, asOf: input.asOf, workflowState, priority, conditions, outstandingCents, collectibleInvoiceIds: collectible.map(invoice => invoice.id), excludedInvoiceIds: disputed.map(invoice => invoice.id), recommendation, evidenceRefs: evidence([...input.evidenceRefs, ...invoices.flatMap(invoice => invoice.evidenceRefs), ...events.flatMap(event => event.evidenceRefs)]) });
+  return deepFreeze({ organizationId: input.organizationId, caseId: input.case.id, asOf: input.asOf, workflowState, priority, conditions, outstandingCents, collectibleInvoiceIds: collectible.map(invoice => invoice.id), excludedInvoiceIds: evidence([...disputed.map(invoice => invoice.id), ...pendingClaimInvoiceIds]), recommendation, evidenceRefs: evidence([...input.evidenceRefs, ...invoices.flatMap(invoice => invoice.evidenceRefs), ...events.flatMap(event => event.evidenceRefs)]) });
 }
