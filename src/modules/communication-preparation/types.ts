@@ -116,3 +116,65 @@ export interface CommunicationDraft {
 export interface CommunicationDraftProvider { readonly id: string; draft(request: CommunicationDraftRequest): CommunicationDraft }
 export interface DraftValidationResult { readonly valid: boolean; readonly errors: readonly string[] }
 export interface DraftApproval { readonly id: string; readonly organizationId: string; readonly draftId: string; readonly status: "APPROVED" | "REJECTED"; readonly actorId: string; readonly decidedAt: string; readonly reason?: string }
+
+export type CommunicationSendState = "DRAFT" | "APPROVED" | "REVALIDATION_REQUIRED" | "READY_TO_SEND" | "BLOCKED_BEFORE_SEND";
+export type CommunicationSendBlocker =
+  | "STALE_DRAFT"
+  | "APPROVAL_INVALID"
+  | "CONTACT_NO_LONGER_ELIGIBLE"
+  | "CHANNEL_NO_LONGER_ELIGIBLE"
+  | "BALANCE_CHANGED"
+  | "ZERO_BALANCE"
+  | "INVOICE_SCOPE_CHANGED"
+  | "PAYMENT_CLAIM_APPEARED"
+  | "PAYMENT_STATE_CHANGED"
+  | "PROMISE_STATE_CHANGED"
+  | "DISPUTE_OPENED"
+  | "RECOMMENDATION_CHANGED"
+  | "POLICY_CHANGED"
+  | "LEGAL_REVIEW_REQUIRED"
+  | "ENTITY_AMBIGUITY"
+  | "EVIDENCE_CHANGED"
+  | "TENANT_MISMATCH"
+  | "CASE_MISMATCH";
+
+export interface CommunicationSendPreparation {
+  readonly id: string;
+  readonly tenantId: string;
+  readonly caseId: string;
+  readonly draftId: string;
+  readonly approvalId: string;
+  readonly contactId: string;
+  readonly channelId: string;
+  readonly intent: CommunicationIntent;
+  readonly requestedAt: string;
+  readonly requestedBy: string;
+  readonly approvedSnapshotFingerprint: string;
+  readonly currentSnapshotFingerprint?: string;
+  readonly state: "REVALIDATION_REQUIRED" | "READY_TO_SEND" | "BLOCKED_BEFORE_SEND";
+  readonly blockers: readonly CommunicationSendBlocker[];
+  readonly evidenceRefs: readonly string[];
+  readonly idempotencyKey: string;
+}
+
+export interface CommunicationSendAuthorization {
+  readonly id: string;
+  readonly tenantId: string;
+  readonly caseId: string;
+  readonly draftId: string;
+  readonly approvalId: string;
+  readonly contactId: string;
+  readonly channelId: string;
+  readonly intent: CommunicationIntent;
+  readonly authorizedAt: string;
+  readonly asOf: string;
+  readonly currentFingerprint: string;
+  readonly idempotencyKey: string;
+  readonly evidenceRefs: readonly string[];
+  readonly state: "READY_TO_SEND";
+}
+
+export interface CommunicationSendRevalidationResult {
+  readonly preparation: CommunicationSendPreparation;
+  readonly authorization?: CommunicationSendAuthorization;
+}
