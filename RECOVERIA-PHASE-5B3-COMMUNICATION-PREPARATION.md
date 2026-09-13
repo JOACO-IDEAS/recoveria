@@ -48,11 +48,19 @@ The prohibited-claims policy covers unsupported debtor/liability assertions, pay
 
 `validateCommunicationDraft()` treats provider output as untrusted and fails closed on scope mismatch, missing human-approval requirement, unsupported contact name, amount, invoice number or date, legal/prescription threats, last-notice language, liability claims, unsafe payment/promise claims, unsupported repeated-contact language, and unauthorized fact/evidence references. Subject and body are both validated.
 
+Phase 5B.3A broadens the deterministic phrase families for each prohibited category across both subject and body. Before matching, safety text is normalized with Unicode accent removal, lowercase conversion, whitespace collapse, and trimming. The patterns remain deliberately bounded to the approved Spanish phrases rather than attempting unrestricted semantic interpretation. Neutral payment-verification wording such as “nos informaron un pago que todavía estamos verificando” remains permitted.
+
+Invoice hallucination detection now recognizes the production-style `F-` prefix, including numeric and alphanumeric suffixes, while preserving `FAC-`, `FC-`, and `INV-`. A referenced invoice must still be in the authorized included-invoice fact set; invented, excluded, or other-case `F-` identifiers fail validation.
+
 ## Human approval and staleness
 
 `recordDraftApproval()` creates an immutable `APPROVED` or `REJECTED` human domain object with actor and timestamp. Approval triggers nothing.
 
 Draft requests and drafts carry a deterministic snapshot fingerprint over projection, selected contact/channel, eligibility, financial invoice facts, and current promise/claim/dispute context. `isCommunicationDraftStale()` detects changes. Future sending must re-evaluate eligibility and facts; send revalidation is deliberately not implemented here.
+
+The fingerprint also includes the explicit `allowPaymentVerificationRequest` policy switch. Revoking that permission therefore makes an already prepared verification draft stale. The current input contract has no other safety policy booleans.
+
+Chronology summaries are least privilege: only entries with at least one related invoice ID intersecting the included draft invoice IDs may enter authorized facts. Entries belonging only to disputed, pending-claim, active-promise, non-collectible, or other-case invoices are excluded, as are chronology entries with no invoice IDs. No case-level chronology exception is currently needed.
 
 ## Synthetic scenarios and UI decision
 
@@ -65,3 +73,5 @@ No UI was added. The current showroom Case Detail is backed by the earlier flatt
 Real tone acceptance, contact selection practice, channel preference, verification-request policy, invoice grouping, evidence expectations, reviewer roles, approval workflow, and legal wording remain Client Zero unknowns.
 
 Deferred to later phases are detailed per-invoice payment allocation, write-time human gates for interaction facts, Prisma reconciliation, persistence, UI wiring, AI-backed optional providers, editing, send-time revalidation, message delivery, email/WhatsApp providers, webhooks, scheduling, cadence, reminders, inbox sync, campaigns, autonomous sending, negotiation, and legal execution.
+
+Phase 5B.3A additionally leaves the reviewed P2 limitations unchanged: amount-to-invoice pairing, natural-language amount/date variants, contact-name detection outside the greeting, empty fact/evidence-reference bypasses, a human/system discriminator on `DraftApproval`, per-invoice allocation, and a write-time gate. Phase 5B.3A still has no send capability.

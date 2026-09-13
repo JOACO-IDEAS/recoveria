@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { deriveCollectionInteractionContext, projectCollectionCaseWithInteractionContext } from "@/modules/collection-interactions";
 import { resolveCollectionContacts } from "@/modules/contact-relationships";
 import { channelOf, contactContextOf, contactOf, relationshipOf } from "@/test/fixtures/phase-5b2a-contact-truth-set";
-import { claimOf, interactionInput, promiseOf, verifiedEvent } from "@/test/fixtures/phase-5b2b-interaction-truth-set";
+import { claimOf, disputeOf, interactionCaseOf, interactionInput, interactionOf, promiseOf, verifiedEvent } from "@/test/fixtures/phase-5b2b-interaction-truth-set";
 import { invoiceOf } from "@/test/fixtures/phase-5b1-truth-set";
 import { communicationCase, communicationInput, communicationInvoice, inputWithInteraction } from "@/test/fixtures/phase-5b3-communication-truth-set";
 import { createCommunicationDraftRequest, createValidatedCommunicationDraft, DeterministicTemplateDraftProvider, evaluateCommunicationPreparation, isCommunicationDraftStale, recordDraftApproval, validateCommunicationDraft } from ".";
@@ -14,6 +14,9 @@ const readyDraft = (input = communicationInput()) => {
   const request = createCommunicationDraftRequest(evaluation, requestMeta);
   return { evaluation, request, draft: createValidatedCommunicationDraft(new DeterministicTemplateDraftProvider(), request) };
 };
+const withPhrase = <T extends { readonly subject?: string; readonly body: string }>(draft: T, phrase: string, location: "subject" | "body"): T => location === "subject"
+  ? { ...draft, subject: phrase }
+  : { ...draft, body: `Hola Juan García, ${phrase}.` };
 
 describe("Phase 5B.3 communication preparation", () => {
   it("prepares a deterministic email draft for one eligible contact and channel", () => {
@@ -78,6 +81,104 @@ describe("Phase 5B.3 communication preparation", () => {
     expect(evaluateCommunicationPreparation({ ...input, allowPaymentVerificationRequest: false }).outcome).toBe("BLOCKED");
   });
 
+  it.each([
+    "No recibimos el pago",
+    "El pago no fue realizado",
+    "Continúa impago",
+    "Continua impago",
+    "El pago informado no existe",
+    "No consta el pago",
+    "No se registró el pago",
+    "No se registro el pago",
+    "No efectuaron el pago",
+    "No efectuaste el pago",
+  ].flatMap(phrase => (["subject", "body"] as const).map(location => [phrase, location] as const)))("rejects pending-payment assertion %j in the %s", (phrase, location) => {
+    const { evaluation } = readyDraft(inputWithInteraction({ claim: true }));
+    const request = createCommunicationDraftRequest(evaluation, requestMeta);
+    const draft = new DeterministicTemplateDraftProvider().draft(request);
+    expect(validateCommunicationDraft(withPhrase(draft, phrase, location), request).errors).toContain("PAYMENT_FAILURE_UNSUPPORTED");
+  });
+
+  it("preserves neutral payment-verification wording", () => {
+    const { evaluation } = readyDraft(inputWithInteraction({ claim: true }));
+    const request = createCommunicationDraftRequest(evaluation, requestMeta);
+    const draft = new DeterministicTemplateDraftProvider().draft(request);
+    expect(draft.body).toContain("nos informaron un pago");
+    expect(draft.body).toContain("todavía estamos verificando");
+    expect(validateCommunicationDraft(draft, request)).toEqual({ valid: true, errors: [] });
+  });
+
+  it.each([
+    "Incumpliste el compromiso",
+    "Incumplieron el compromiso",
+    "Incumplió el compromiso",
+    "Incumplio el compromiso",
+    "Compromiso incumplido",
+    "Promesa incumplida",
+  ].flatMap(phrase => (["subject", "body"] as const).map(location => [phrase, location] as const)))("rejects unsupported promise assertion %j in the %s", (phrase, location) => {
+    const { request, draft } = readyDraft();
+    expect(validateCommunicationDraft(withPhrase(draft, phrase, location), request).errors).toContain("BROKEN_PROMISE_UNSUPPORTED");
+  });
+
+  it.each([
+    "Usted debe",
+    "Vos debés",
+    "Vos debes",
+    "Su deuda",
+    "Tu deuda",
+    "Tiene una deuda",
+    "Tenés una deuda",
+    "Es responsable por",
+    "Es responsable de",
+    "Debe abonar",
+    "Debe pagar",
+  ].flatMap(phrase => (["subject", "body"] as const).map(location => [phrase, location] as const)))("rejects liability assertion %j in the %s", (phrase, location) => {
+    const { request, draft } = readyDraft();
+    expect(validateCommunicationDraft(withPhrase(draft, phrase, location), request).errors).toContain("LIABILITY_ASSERTION_UNSUPPORTED");
+  });
+
+  it.each([
+    ["Último aviso", "LAST_NOTICE_UNSUPPORTED"],
+    ["Ultimo aviso", "LAST_NOTICE_UNSUPPORTED"],
+    ["Intimación", "LEGAL_LANGUAGE_PROHIBITED"],
+    ["Intimacion", "LEGAL_LANGUAGE_PROHIBITED"],
+    ["Intimar", "LEGAL_LANGUAGE_PROHIBITED"],
+    ["Carta documento", "LEGAL_LANGUAGE_PROHIBITED"],
+    ["Acciones legales", "LEGAL_LANGUAGE_PROHIBITED"],
+    ["Acción legal", "LEGAL_LANGUAGE_PROHIBITED"],
+    ["Demanda", "LEGAL_LANGUAGE_PROHIBITED"],
+    ["Demandar", "LEGAL_LANGUAGE_PROHIBITED"],
+    ["Abogado", "LEGAL_LANGUAGE_PROHIBITED"],
+    ["Abogada", "LEGAL_LANGUAGE_PROHIBITED"],
+    ["Estudio jurídico", "LEGAL_LANGUAGE_PROHIBITED"],
+    ["Estudio juridico", "LEGAL_LANGUAGE_PROHIBITED"],
+    ["Judicial", "LEGAL_LANGUAGE_PROHIBITED"],
+    ["Judicialmente", "LEGAL_LANGUAGE_PROHIBITED"],
+    ["Se iniciarán acciones", "LEGAL_LANGUAGE_PROHIBITED"],
+    ["Se iniciaran acciones", "LEGAL_LANGUAGE_PROHIBITED"],
+    ["Se procederá", "LEGAL_LANGUAGE_PROHIBITED"],
+    ["Se procedera", "LEGAL_LANGUAGE_PROHIBITED"],
+    ["Instancia legal", "LEGAL_LANGUAGE_PROHIBITED"],
+    ["Vía legal", "LEGAL_LANGUAGE_PROHIBITED"],
+    ["Via legal", "LEGAL_LANGUAGE_PROHIBITED"],
+  ].flatMap(([phrase, error]) => (["subject", "body"] as const).map(location => [phrase, error, location] as const)))("rejects pressure language %j in the %s", (phrase, error, location) => {
+    const { request, draft } = readyDraft();
+    expect(validateCommunicationDraft(withPhrase(draft, phrase, location), request).errors).toContain(error);
+  });
+
+  it.each([
+    "Te contactamos varias veces",
+    "Lo contactamos varias veces",
+    "Ya te reclamamos anteriormente",
+    "Ya lo reclamamos anteriormente",
+    "Ante la falta de respuesta",
+    "Sin respuesta de su parte",
+    "No obtuvimos respuesta",
+  ].flatMap(phrase => (["subject", "body"] as const).map(location => [phrase, location] as const)))("rejects repeated-contact assertion %j in the %s", (phrase, location) => {
+    const { request, draft } = readyDraft();
+    expect(validateCommunicationDraft(withPhrase(draft, phrase, location), request).errors).toContain("REPEATED_CONTACT_UNSUPPORTED");
+  });
+
   it("allows promise language only for a safely supported broken promise", () => {
     const { evaluation, draft } = readyDraft(inputWithInteraction({ promise: "BROKEN" }));
     expect(evaluation.intent).toBe("PROMISE_FOLLOW_UP");
@@ -112,6 +213,43 @@ describe("Phase 5B.3 communication preparation", () => {
     expect(authorized.targetOutstandingCents).toBe(800_000_00);
   });
 
+  it("filters chronology to entries intersecting included invoice IDs", () => {
+    const base = communicationInput();
+    const mixedCase = interactionCaseOf(["invoice-a", "invoice-b", "invoice-c"]);
+    const context = deriveCollectionInteractionContext(interactionInput({
+      case: mixedCase,
+      contactResolution: base.interactionContext.relevantContacts,
+      interactions: [
+        interactionOf("invoice-a-contact", "CONTACT_ATTEMPTED", { channelId: "email-juan", occurredAt: "2026-09-06T12:00:00.000Z", relatedInvoiceIds: ["invoice-a"] }),
+        interactionOf("invoice-b-contact", "CONTACT_ATTEMPTED", { channelId: "email-juan", occurredAt: "2026-09-07T12:00:00.000Z", relatedInvoiceIds: ["invoice-b"] }),
+        interactionOf("case-level", "CONTACT_DELIVERED", { channelId: "email-juan", occurredAt: "2026-09-08T12:00:00.000Z", relatedInvoiceIds: [] }),
+      ],
+      disputes: [disputeOf("invoice-b-dispute", { invoiceId: "invoice-b" })],
+      paymentClaims: [claimOf("invoice-c-claim", { invoiceIds: ["invoice-c"] })],
+    }));
+    const projection = { ...base.projection, collectibleInvoiceIds: ["invoice-a"], excludedInvoiceIds: ["invoice-b", "invoice-c"] };
+    const authorized = evaluateCommunicationPreparation({ ...base, projection, interactionContext: context, invoices: [communicationInvoice("invoice-a"), communicationInvoice("invoice-b"), communicationInvoice("invoice-c")] }).authorizedFacts!;
+    expect(authorized.includedInvoiceIds).toEqual(["invoice-a"]);
+    expect(authorized.chronologySummaryFacts.map(fact => fact.id)).toEqual(["fact:chronology:interaction:invoice-a-contact"]);
+    expect(authorized.chronologySummaryFacts.flatMap(fact => fact.evidenceRefs)).not.toEqual(expect.arrayContaining(["fixture:5b2b:invoice-b-contact", "fixture:5b2b:invoice-b-dispute", "fixture:5b2b:invoice-c-claim", "fixture:5b2b:case-level"]));
+  });
+
+  it("recognizes F- invoice references and rejects unauthorized F- values in subject and body", () => {
+    const base = communicationInput();
+    const input = communicationInput({
+      invoices: [communicationInvoice("invoice-a", { invoiceNumber: "F-0001" }), communicationInvoice("invoice-b", { invoiceNumber: "F-0002" })],
+      projection: { ...base.projection, collectibleInvoiceIds: ["invoice-a"], excludedInvoiceIds: ["invoice-b"] },
+    });
+    const { request, draft } = readyDraft(input);
+    expect(draft.body).toContain("F-0001");
+    expect(request.authorizedFacts.excludedInvoices).toContainEqual({ invoiceId: "invoice-b", reasons: ["NOT_COLLECTIBLE"] });
+    expect(validateCommunicationDraft(draft, request).valid).toBe(true);
+    for (const value of ["F-9999", "F-0002", "F-1234"]) {
+      expect(validateCommunicationDraft(withPhrase(draft, value, "subject"), request).errors).toContain("UNSUPPORTED_INVOICE_NUMBER");
+      expect(validateCommunicationDraft(withPhrase(draft, value, "body"), request).errors).toContain("UNSUPPORTED_INVOICE_NUMBER");
+    }
+  });
+
   it("rejects hallucinated amounts, invoices, legal threats, and promise claims", () => {
     const evaluation = evaluateCommunicationPreparation(communicationInput());
     const request = createCommunicationDraftRequest(evaluation, requestMeta);
@@ -128,6 +266,13 @@ describe("Phase 5B.3 communication preparation", () => {
     const input = communicationInput(); const { draft } = readyDraft(input);
     expect(isCommunicationDraftStale(draft, input)).toBe(false);
     expect(isCommunicationDraftStale(draft, { ...input, invoices: [communicationInvoice("invoice-a", { outstandingCents: 700_000_00 })] })).toBe(true);
+  });
+
+  it("marks a payment-verification draft stale when its policy permission is revoked", () => {
+    const input = inputWithInteraction({ claim: true });
+    const { draft } = readyDraft(input);
+    expect(isCommunicationDraftStale(draft, input)).toBe(false);
+    expect(isCommunicationDraftStale(draft, { ...input, allowPaymentVerificationRequest: false })).toBe(true);
   });
 
   it("records human approval without sending", () => {
