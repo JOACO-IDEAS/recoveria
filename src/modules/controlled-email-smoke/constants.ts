@@ -1,0 +1,17 @@
+export const CONTROLLED_SMOKE = {
+  organizationId: "org-recoveria-controlled-smoke-test",
+  organizationName: "RecoverIA Controlled Smoke Test",
+  caseId: "case-recoveria-controlled-smoke-test",
+  administrationId: "administration-recoveria-controlled-smoke-test",
+  buildingId: "building-recoveria-controlled-smoke-test",
+  invoiceId: "invoice-recoveria-controlled-smoke-test",
+  contactId: "contact-recoveria-controlled-smoke-test",
+  channelId: "channel-recoveria-controlled-smoke-test",
+  relationshipId: "relationship-recoveria-controlled-smoke-test",
+  requestId: "request-recoveria-controlled-smoke-test-v1",
+  draftId: "draft:request-recoveria-controlled-smoke-test-v1",
+  approvalId: "approval-recoveria-controlled-smoke-test-v1",
+  asOf: "2026-09-16T12:00:00.000Z",
+  confirmation: "SEND_ONE_SYNTHETIC_EMAIL",
+  dryRunRecipient: "recoveria-controlled-smoke@example.invalid",
+} as const;

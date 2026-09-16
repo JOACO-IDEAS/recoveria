@@ -11,8 +11,9 @@
     "typecheck": "tsc --noEmit",
     "check": "npm run lint && npm run typecheck && npm test && npm run build",
     "db:generate": "prisma generate",
-    "db:validate": "prisma validate"
-    ,"client-zero:preflight": "node scripts/client-zero-preflight.mjs"
+    "db:validate": "prisma validate",
+    "client-zero:preflight": "node scripts/client-zero-preflight.mjs",
+    "smoke:email:controlled": "tsx scripts/communication/run-controlled-email-smoke-test.ts"
   },
   "dependencies": {
     "@prisma/adapter-pg": "6.12.0",
@@ -35,6 +36,7 @@
     "eslint-config-next": "16.3.4",
     "prisma": "6.12.0",
     "tailwindcss": "4.1.14",
+    "tsx": "^4.23.13",
     "typescript": "5.9.2",
     "vitest": "4.1.11"
   },

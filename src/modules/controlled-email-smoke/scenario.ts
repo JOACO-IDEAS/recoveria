@@ -1,0 +1,34 @@
+import { deriveCollectionInteractionContext } from "@/modules/collection-interactions";
+import { resolveCollectionContacts } from "@/modules/contact-relationships";
+import type { AdministrationContactRelationship, ContactChannel, ContactIdentity, ContactRelationshipContext } from "@/modules/contact-relationships";
+import { communicationSnapshotFingerprint, createCommunicationDraftRequest, createCommunicationSendPreparation, evaluateCommunicationPreparation, recordDraftApproval, validateCommunicationDraft } from "@/modules/communication-preparation";
+import type { CommunicationDraft, CommunicationPreparationInput, DraftApprovalActor } from "@/modules/communication-preparation";
+import { projectCollectionCase } from "@/modules/collections-engine";
+import type { CollectionCase, CollectionEvent, CollectionInvoice } from "@/modules/collections-engine";
+import { CONTROLLED_SMOKE } from "./constants";
+
+const evidence = (name: string) => [`smoke-test-only:${name}`];
+
+export function createControlledSmokeScenario(recipient: string, actor: DraftApprovalActor = { kind: "HUMAN", id: "controlled-smoke-test-human-operator" }) {
+  if (!recipient || recipient.length > 320) throw new Error("Controlled smoke recipient configuration is invalid");
+  const collectionCase: CollectionCase = { id: CONTROLLED_SMOKE.caseId, organizationId: CONTROLLED_SMOKE.organizationId, administrationId: CONTROLLED_SMOKE.administrationId, buildingId: CONTROLLED_SMOKE.buildingId, invoiceIds: [CONTROLLED_SMOKE.invoiceId], currency: "ARS" };
+  const contact: ContactIdentity = { id: CONTROLLED_SMOKE.contactId, organizationId: CONTROLLED_SMOKE.organizationId, displayName: "Prueba Interna RecoverIA", normalizedName: "prueba interna recoveria", status: "CONFIRMED", evidenceRefs: evidence("contact") };
+  const channel: ContactChannel = { id: CONTROLLED_SMOKE.channelId, organizationId: CONTROLLED_SMOKE.organizationId, contactId: contact.id, type: "EMAIL", rawValue: recipient, normalizedValue: recipient.trim().toLowerCase(), status: "CONFIRMED", firstObservedAt: "2026-09-16", lastConfirmedAt: "2026-09-16", evidenceRefs: evidence("channel") };
+  const relationship: AdministrationContactRelationship = { id: CONTROLLED_SMOKE.relationshipId, organizationId: CONTROLLED_SMOKE.organizationId, contactId: contact.id, administrationId: CONTROLLED_SMOKE.administrationId, role: "OTHER", roleStatus: "CONFIRMED", scope: "BUILDING_SPECIFIC", buildingIds: [CONTROLLED_SMOKE.buildingId], status: "CONFIRMED", validFrom: "2026-09-16", evidenceRefs: evidence("relationship") };
+  const contactContext: ContactRelationshipContext = { organizationId: CONTROLLED_SMOKE.organizationId, buildingId: CONTROLLED_SMOKE.buildingId, administrationId: CONTROLLED_SMOKE.administrationId, asOf: CONTROLLED_SMOKE.asOf, contacts: [contact], channels: [channel], relationships: [relationship] };
+  const contactResolution = resolveCollectionContacts(collectionCase, contactContext);
+  const interactionContext = deriveCollectionInteractionContext({ organizationId: CONTROLLED_SMOKE.organizationId, asOf: CONTROLLED_SMOKE.asOf, case: collectionCase, collectionEvents: [], interactions: [], promises: [], confirmedPromisePayments: [], paymentClaims: [], disputes: [], contactResolution });
+  const invoice: CollectionInvoice = { id: CONTROLLED_SMOKE.invoiceId, organizationId: CONTROLLED_SMOKE.organizationId, outstandingCents: 100, daysOverdue: 1, disputed: false, evidenceRefs: evidence("invoice") };
+  const opened: CollectionEvent = { id: "event-recoveria-controlled-smoke-test-opened", organizationId: CONTROLLED_SMOKE.organizationId, caseId: CONTROLLED_SMOKE.caseId, type: "CASE_OPENED", occurredAt: "2026-09-16T11:00:00.000Z", actor: { kind: "HUMAN", id: "controlled-smoke-test-human-operator" }, reason: "SMOKE-TEST-ONLY synthetic case initialization", evidenceRefs: evidence("case-opened") };
+  const projection = projectCollectionCase({ organizationId: CONTROLLED_SMOKE.organizationId, asOf: CONTROLLED_SMOKE.asOf, case: collectionCase, invoices: [invoice], events: [opened], contactAvailable: true, entityConfidence: "CONFIRMED", legalReviewThreshold: false, evidenceRefs: evidence("recommendation") });
+  const current: CommunicationPreparationInput = { organizationId: CONTROLLED_SMOKE.organizationId, caseId: CONTROLLED_SMOKE.caseId, administrationId: CONTROLLED_SMOKE.administrationId, administrationName: "Administración Sintética de Prueba", administrationEvidenceRefs: evidence("administration"), buildingId: CONTROLLED_SMOKE.buildingId, buildingDisplayName: "Edificio Sintético de Prueba", buildingEvidenceRefs: evidence("building"), projection, interactionContext, invoices: [{ id: CONTROLLED_SMOKE.invoiceId, organizationId: CONTROLLED_SMOKE.organizationId, invoiceNumber: "TEST-0001", outstandingCents: 100, overdueCents: 100, dueDate: "2026-09-15", evidenceRefs: evidence("invoice-fact") }], selectedContactId: contact.id, selectedChannelId: channel.id, allowPaymentVerificationRequest: false };
+  const evaluation = evaluateCommunicationPreparation(current);
+  if (evaluation.outcome !== "READY_FOR_DRAFT") throw new Error(`Synthetic smoke scenario is not draftable: ${evaluation.blockers.join(",")}`);
+  const draftRequest = createCommunicationDraftRequest(evaluation, { id: CONTROLLED_SMOKE.requestId, requestedAt: "2026-09-16T12:01:00.000Z", requestedBy: "controlled-smoke-test-human-operator" });
+  const draft: CommunicationDraft = { id: CONTROLLED_SMOKE.draftId, requestId: draftRequest.id, organizationId: CONTROLLED_SMOKE.organizationId, caseId: CONTROLLED_SMOKE.caseId, contactId: contact.id, channelId: channel.id, intent: draftRequest.intent, subject: "[RECOVERIA TEST] Prueba controlada de comunicación", body: "Hola Prueba Interna RecoverIA, este es un correo de prueba interna de RecoverIA. No representa una deuda, factura, reclamo ni comunicación de cobranza real.", channel: "EMAIL", createdAt: "2026-09-16T12:02:00.000Z", draftingMethod: "DETERMINISTIC_TEMPLATE", factRefs: [], evidenceRefs: [...draftRequest.evidenceRefs], warnings: ["SMOKE_TEST_ONLY"], requiresHumanApproval: true, snapshotFingerprint: draftRequest.snapshotFingerprint };
+  const validation = validateCommunicationDraft(draft, draftRequest);
+  if (!validation.valid) throw new Error(`Synthetic smoke draft validation failed: ${validation.errors.join(",")}`);
+  const approval = recordDraftApproval(draft, { id: CONTROLLED_SMOKE.approvalId, status: "APPROVED", actor, decidedAt: "2026-09-16T12:03:00.000Z", reason: "Controlled smoke-test human authorization" });
+  const preparation = createCommunicationSendPreparation({ id: "preparation-recoveria-controlled-smoke-test-v1", draft, draftRequest, approval, requestedAt: "2026-09-16T12:04:00.000Z", requestedBy: "controlled-smoke-test-human-operator" });
+  return { current, draftRequest, draft, approval, preparation, fingerprint: communicationSnapshotFingerprint(current), recipient: channel.normalizedValue };
+}
