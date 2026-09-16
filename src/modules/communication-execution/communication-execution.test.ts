@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { deriveCollectionInteractionContext } from "@/modules/collection-interactions";
 import { resolveCollectionContacts } from "@/modules/contact-relationships";
-import { createCommunicationDraftRequest, createCommunicationSendPreparation, createValidatedCommunicationDraft, DeterministicTemplateDraftProvider, evaluateCommunicationPreparation, recordDraftApproval } from "@/modules/communication-preparation";
+import { communicationSnapshotFingerprint, createCommunicationDraftRequest, createCommunicationSendPreparation, createValidatedCommunicationDraft, DeterministicTemplateDraftProvider, evaluateCommunicationPreparation, recordDraftApproval } from "@/modules/communication-preparation";
 import { channelOf, contactContextOf, contactOf, relationshipOf } from "@/test/fixtures/phase-5b2a-contact-truth-set";
 import { interactionInput } from "@/test/fixtures/phase-5b2b-interaction-truth-set";
 import { communicationCase, communicationInput, communicationInvoice, inputWithInteraction } from "@/test/fixtures/phase-5b3-communication-truth-set";
-import { CommunicationProviderAttemptError, executeCommunicationBoundary, InMemoryCommunicationExecutionStore, providerRequestKeyFor, recoverInterruptedCommunicationExecution, SimulatedExecutionCrash } from ".";
-import type { CommunicationExecutionProvider, CommunicationOutcomeStatus } from ".";
+import { CommunicationExecutionService, CommunicationProviderAttemptError, executionIdFor, InMemoryCommunicationExecutionStore, providerRequestKeyFor, reconcileInterruptedCommunicationExecutions, SimulatedExecutionCrash } from ".";
+import type { CommunicationExecutionProvider, CommunicationExecutionStateLoader, CommunicationOutcomeStatus } from ".";
 
 const requestMeta = { id: "execution-request", requestedAt: "2026-09-11T13:00:00.000Z", requestedBy: "operator" };
 const preparationMeta = { id: "execution-preparation", requestedAt: "2026-09-11T14:00:00.000Z", requestedBy: "operator" };
@@ -30,7 +30,15 @@ const approvedScenario = (current = communicationInput(), requestId = requestMet
   return { current, draftRequest, draft, approval, preparation };
 };
 
-const execute = (scenario: ReturnType<typeof approvedScenario>, store: InMemoryCommunicationExecutionStore, provider: CommunicationExecutionProvider, current = scenario.current) => executeCommunicationBoundary({ ...scenario, current, store, provider, asOf: current.interactionContext.asOf, executionRequestedAt: "2026-09-11T14:05:00.000Z" });
+const loaderByStore = new WeakMap<InMemoryCommunicationExecutionStore, Promise<CommunicationExecutionStateLoader>>();
+const trustedLoader = (store: InMemoryCommunicationExecutionStore, current: ReturnType<typeof communicationInput>): Promise<CommunicationExecutionStateLoader> => {
+  const existing = loaderByStore.get(store);
+  if (existing) return existing;
+  const created = store.advanceSafetyState({ organizationId: current.organizationId, caseId: current.caseId, safetyFingerprint: communicationSnapshotFingerprint(current), observedAt: current.interactionContext.asOf }).then(state => ({ load: async () => ({ ...state, current }) }));
+  loaderByStore.set(store, created);
+  return created;
+};
+const execute = async (scenario: ReturnType<typeof approvedScenario>, store: InMemoryCommunicationExecutionStore, provider: CommunicationExecutionProvider, current = scenario.current, stateLoader?: CommunicationExecutionStateLoader) => new CommunicationExecutionService(store, stateLoader ?? await trustedLoader(store, current), provider).execute({ ...scenario, executionRequestedAt: "2026-09-11T14:05:00.000Z" });
 
 const withInvalidContact = (channelStatus?: "INVALID") => {
   const base = communicationInput();
@@ -58,13 +66,39 @@ describe("Phase 5B.4B durable communication execution boundary", () => {
     expect(provider.calls).toBe(1);
   });
 
+  it("rejects the claim when durable safety state changes after trusted loading", async () => {
+    const scenario = approvedScenario(); const store = new InMemoryCommunicationExecutionStore(); const provider = providerResult("ACCEPTED");
+    const stateA = await store.advanceSafetyState({ organizationId: scenario.current.organizationId, caseId: scenario.current.caseId, safetyFingerprint: communicationSnapshotFingerprint(scenario.current), observedAt: scenario.current.interactionContext.asOf });
+    const changed = { ...scenario.current, invoices: [communicationInvoice("invoice-a", { outstandingCents: 700_000_00, overdueCents: 700_000_00 })] };
+    const stateLoader: CommunicationExecutionStateLoader = { load: async () => {
+      await store.advanceSafetyState({ organizationId: changed.organizationId, caseId: changed.caseId, safetyFingerprint: communicationSnapshotFingerprint(changed), observedAt: changed.interactionContext.asOf });
+      return { ...stateA, current: scenario.current };
+    } };
+    const result = await execute(scenario, store, provider, scenario.current, stateLoader);
+    expect(result).toEqual({ kind: "SAFETY_STATE_CHANGED", blockers: ["SAFETY_SNAPSHOT_CHANGED"] });
+    expect(provider.calls).toBe(0);
+    expect(await store.get(executionIdFor(scenario.draft.organizationId, scenario.draft.id))).toBeUndefined();
+    expect(await store.attempts(executionIdFor(scenario.draft.organizationId, scenario.draft.id))).toEqual([]);
+  });
+
+  it("does not trust a caller-injected old current snapshot", async () => {
+    const scenario = approvedScenario(); const store = new InMemoryCommunicationExecutionStore(); const provider = providerResult("ACCEPTED");
+    const authoritative = inputWithInteraction({ claim: true });
+    const safety = await store.advanceSafetyState({ organizationId: authoritative.organizationId, caseId: authoritative.caseId, safetyFingerprint: communicationSnapshotFingerprint(authoritative), observedAt: authoritative.interactionContext.asOf });
+    const stateLoader: CommunicationExecutionStateLoader = { load: async () => ({ ...safety, current: authoritative }) };
+    const callerPayload = { ...scenario, current: scenario.current, executionRequestedAt: "2026-09-11T14:05:00.000Z" };
+    const result = await new CommunicationExecutionService(store, stateLoader, provider).execute(callerPayload);
+    expect(result.kind).toBe("BLOCKED_BEFORE_ATTEMPT");
+    expect(provider.calls).toBe(0);
+  });
+
   it("uses one logical execution for a second approval of the same draft", async () => {
     const first = approvedScenario(); const store = new InMemoryCommunicationExecutionStore(); const provider = providerResult("ACCEPTED");
     const secondApproval = recordDraftApproval(first.draft, { id: "approval:second", status: "APPROVED", actor: { kind: "HUMAN", id: "reviewer-2" }, decidedAt: "2026-09-11T13:45:00.000Z" });
     const second = { ...first, approval: secondApproval, preparation: createCommunicationSendPreparation({ ...preparationMeta, id: "preparation:second", draft: first.draft, draftRequest: first.draftRequest, approval: secondApproval }) };
     const one = await execute(first, store, provider); const two = await execute(second, store, provider);
     expect(one.kind).toBe("OUTCOME_RECORDED"); expect(two.kind).toBe("DUPLICATE_REQUEST"); expect(provider.calls).toBe(1);
-    if (one.kind !== "BLOCKED_BEFORE_ATTEMPT" && two.kind === "DUPLICATE_REQUEST") expect(two.execution.id).toBe(one.execution.id);
+    if (one.kind === "OUTCOME_RECORDED" && two.kind === "DUPLICATE_REQUEST") expect(two.execution.id).toBe(one.execution.id);
   });
 
   it("gives a genuinely new draft a distinct execution and provider request key", async () => {
@@ -90,9 +124,12 @@ describe("Phase 5B.4B durable communication execution boundary", () => {
 
   it("preserves approval provenance and hard-rejects SYSTEM, tenant, and case mismatches", async () => {
     const scenario = approvedScenario(); const store = new InMemoryCommunicationExecutionStore(); const provider = providerResult("ACCEPTED");
-    await expect(executeCommunicationBoundary({ ...scenario, approval: { ...scenario.approval, actor: { kind: "SYSTEM", id: "scheduler" } }, store, provider, asOf: scenario.current.interactionContext.asOf, executionRequestedAt: "2026-09-11T14:05:00.000Z" })).rejects.toThrow(/HUMAN/);
-    await expect(executeCommunicationBoundary({ ...scenario, current: { ...scenario.current, organizationId: "other" }, store, provider, asOf: scenario.current.interactionContext.asOf, executionRequestedAt: "2026-09-11T14:05:00.000Z" })).rejects.toThrow(/tenant/i);
-    await expect(executeCommunicationBoundary({ ...scenario, current: { ...scenario.current, caseId: "other" }, store, provider, asOf: scenario.current.interactionContext.asOf, executionRequestedAt: "2026-09-11T14:05:00.000Z" })).rejects.toThrow(/case/i);
+    const validLoader = await trustedLoader(store, scenario.current);
+    await expect(new CommunicationExecutionService(store, validLoader, provider).execute({ ...scenario, approval: { ...scenario.approval, actor: { kind: "SYSTEM", id: "scheduler" } }, executionRequestedAt: "2026-09-11T14:05:00.000Z" })).rejects.toThrow(/HUMAN/);
+    const wrongTenantLoader: CommunicationExecutionStateLoader = { load: async () => ({ ...(await store.getSafetyState(scenario.current.organizationId, scenario.current.caseId))!, organizationId: "other", current: { ...scenario.current, organizationId: "other" } }) };
+    await expect(execute(scenario, store, provider, scenario.current, wrongTenantLoader)).rejects.toThrow(/tenant/i);
+    const wrongCaseLoader: CommunicationExecutionStateLoader = { load: async () => ({ ...(await store.getSafetyState(scenario.current.organizationId, scenario.current.caseId))!, caseId: "other", current: { ...scenario.current, caseId: "other" } }) };
+    await expect(execute(scenario, store, provider, scenario.current, wrongCaseLoader)).rejects.toThrow(/case/i);
     expect(provider.calls).toBe(0);
   });
 
@@ -116,9 +153,9 @@ describe("Phase 5B.4B durable communication execution boundary", () => {
   it("recovers a crash after durable attempt creation as UNKNOWN", async () => {
     const scenario = approvedScenario(); const store = new InMemoryCommunicationExecutionStore(); const provider = new SyntheticProvider(async () => { throw new SimulatedExecutionCrash("synthetic crash"); });
     await expect(execute(scenario, store, provider)).rejects.toThrow(SimulatedExecutionCrash);
-    const executionId = `communication-execution:${providerRequestKeyFor(scenario.draft.organizationId, scenario.draft.id).split(":").at(-1)}`;
+    const executionId = executionIdFor(scenario.draft.organizationId, scenario.draft.id);
     expect((await store.get(executionId))?.status).toBe("ATTEMPTING");
-    const recovered = await recoverInterruptedCommunicationExecution(store, executionId, "2026-09-11T14:10:00.000Z");
+    const [recovered] = await reconcileInterruptedCommunicationExecutions(store, [executionId], "2026-09-11T14:10:00.000Z");
     expect(recovered.status).toBe("UNKNOWN"); expect(await store.outcomes(executionId)).toMatchObject([{ status: "UNKNOWN", reasonCode: "PROCESS_INTERRUPTED_AFTER_ATTEMPT_CREATION" }]);
   });
 
@@ -128,5 +165,6 @@ describe("Phase 5B.4B durable communication execution boundary", () => {
     if (result.kind !== "OUTCOME_RECORDED") throw new Error("Expected recorded outcome");
     expect(result.execution.providerRequestKey).toBe(providerRequestKeyFor(scenario.draft.organizationId, scenario.draft.id));
     expect(JSON.stringify({ execution: result.execution, attempt: result.attempt, outcome: result.outcome })).not.toContain(scenario.draft.body);
+    expect(JSON.stringify(result)).not.toContain("MESSAGE_SENT");
   });
 });

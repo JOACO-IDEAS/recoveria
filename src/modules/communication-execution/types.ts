@@ -48,19 +48,37 @@ export interface CommunicationSendOutcome {
   readonly reasonCode: string;
 }
 
+export interface CommunicationExecutionSafetyState {
+  readonly organizationId: string;
+  readonly caseId: string;
+  readonly version: string;
+  readonly safetyFingerprint: string;
+  readonly observedAt: string;
+}
+
+export interface CommunicationExecutionSafetySnapshot extends CommunicationExecutionSafetyState {
+  readonly current: CommunicationPreparationInput;
+}
+
+export interface CommunicationExecutionStateLoader {
+  load(input: { readonly organizationId: string; readonly caseId: string; readonly draftId: string; readonly approvalId: string }): Promise<CommunicationExecutionSafetySnapshot>;
+}
+
 export interface CommunicationExecutionClaimInput extends Omit<CommunicationExecution, "status" | "claimedAt"> {
   readonly claimedAt: string;
   readonly providerId?: string;
+  readonly expectedSafetyVersion: string;
+  readonly expectedSafetyFingerprint: string;
 }
 
-export interface CommunicationExecutionClaimResult {
-  readonly claimed: boolean;
-  readonly execution: CommunicationExecution;
-  readonly attempt?: CommunicationSendAttempt;
-}
+export type CommunicationExecutionClaimResult =
+  | { readonly freshnessMatched: false; readonly claimed: false }
+  | { readonly freshnessMatched: true; readonly claimed: boolean; readonly execution: CommunicationExecution; readonly attempt?: CommunicationSendAttempt };
 
 export interface CommunicationExecutionStore {
   claim(input: CommunicationExecutionClaimInput): Promise<CommunicationExecutionClaimResult>;
+  advanceSafetyState(input: Omit<CommunicationExecutionSafetyState, "version">): Promise<CommunicationExecutionSafetyState>;
+  getSafetyState(organizationId: string, caseId: string): Promise<CommunicationExecutionSafetyState | undefined>;
   complete(executionId: string, attemptId: string, outcome: CommunicationSendOutcome): Promise<CommunicationExecution>;
   recoverUnknown(executionId: string, occurredAt: string): Promise<CommunicationExecution>;
   get(executionId: string): Promise<CommunicationExecution | undefined>;
@@ -83,14 +101,11 @@ export interface ExecuteCommunicationInput {
   readonly draft: CommunicationDraft;
   readonly draftRequest: CommunicationDraftRequest;
   readonly approval: DraftApproval;
-  readonly current: CommunicationPreparationInput;
-  readonly asOf: string;
   readonly executionRequestedAt: string;
-  readonly store: CommunicationExecutionStore;
-  readonly provider: CommunicationExecutionProvider;
 }
 
 export type ExecuteCommunicationResult =
   | { readonly kind: "BLOCKED_BEFORE_ATTEMPT"; readonly blockers: readonly string[] }
+  | { readonly kind: "SAFETY_STATE_CHANGED"; readonly blockers: readonly ["SAFETY_SNAPSHOT_CHANGED"] }
   | { readonly kind: "DUPLICATE_REQUEST"; readonly execution: CommunicationExecution; readonly retryEligibility: CommunicationRetryEligibility }
   | { readonly kind: "OUTCOME_RECORDED"; readonly execution: CommunicationExecution; readonly attempt: CommunicationSendAttempt; readonly outcome: CommunicationSendOutcome; readonly retryEligibility: CommunicationRetryEligibility };

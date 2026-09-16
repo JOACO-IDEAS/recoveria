@@ -1,5 +1,6 @@
 generator client {
   provider = "prisma-client-js"
+  previewFeatures = ["driverAdapters"]
 }
 
 datasource db {
@@ -222,6 +223,7 @@ model Organization {
   communicationExecutions CommunicationExecution[]
   communicationAttempts   CommunicationSendAttempt[]
   communicationOutcomes   CommunicationSendOutcome[]
+  communicationSafetyStates CommunicationExecutionSafetyState[]
 }
 
 model Membership {
@@ -615,6 +617,7 @@ model CollectionCase {
   reviewTasks     ReviewTask[]
   legalFlags      LegalReviewFlag[]
   communicationExecutions CommunicationExecution[]
+  communicationSafetyStates CommunicationExecutionSafetyState[]
 
   @@unique([organizationId, id])
   @@index([organizationId, status, currency])
@@ -651,6 +654,21 @@ model CommunicationExecution {
   @@unique([organizationId, idempotencyKey])
   @@unique([organizationId, providerRequestKey])
   @@index([organizationId, status, updatedAt])
+}
+
+model CommunicationExecutionSafetyState {
+  id                String         @id
+  organizationId    String
+  caseId            String
+  version           BigInt
+  safetyFingerprint String
+  observedAt        DateTime
+  updatedAt         DateTime       @updatedAt
+  organization      Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  case              CollectionCase @relation(fields: [organizationId, caseId], references: [organizationId, id], onDelete: Restrict)
+
+  @@unique([organizationId, caseId])
+  @@index([organizationId, updatedAt])
 }
 
 model CommunicationSendAttempt {

@@ -1,5 +1,5 @@
 import { deepFreeze } from "@/lib/domain/evidence";
-import type { CommunicationExecution, CommunicationExecutionClaimInput, CommunicationExecutionClaimResult, CommunicationExecutionStore, CommunicationSendAttempt, CommunicationSendOutcome } from "./types";
+import type { CommunicationExecution, CommunicationExecutionClaimInput, CommunicationExecutionClaimResult, CommunicationExecutionSafetyState, CommunicationExecutionStore, CommunicationSendAttempt, CommunicationSendOutcome } from "./types";
 
 const snapshot = <T>(value: T): T => deepFreeze(structuredClone(value)) as T;
 
@@ -9,6 +9,7 @@ export class InMemoryCommunicationExecutionStore implements CommunicationExecuti
   private readonly executionIdByDraft = new Map<string, string>();
   private readonly attemptsByExecution = new Map<string, CommunicationSendAttempt[]>();
   private readonly outcomesByAttempt = new Map<string, CommunicationSendOutcome>();
+  private readonly safetyByCase = new Map<string, CommunicationExecutionSafetyState>();
   private queue: Promise<void> = Promise.resolve();
 
   private exclusive<T>(operation: () => T | Promise<T>): Promise<T> {
@@ -19,17 +20,31 @@ export class InMemoryCommunicationExecutionStore implements CommunicationExecuti
 
   claim(input: CommunicationExecutionClaimInput): Promise<CommunicationExecutionClaimResult> {
     return this.exclusive(() => {
+      const safety = this.safetyByCase.get(`${input.organizationId}\u0000${input.caseId}`);
+      if (!safety || safety.version !== input.expectedSafetyVersion || safety.safetyFingerprint !== input.expectedSafetyFingerprint) return snapshot({ freshnessMatched: false, claimed: false });
       const draftKey = `${input.organizationId}\u0000${input.draftId}`;
       const existingId = this.executionIdByDraft.get(draftKey);
-      if (existingId) return snapshot({ claimed: false, execution: this.executionById.get(existingId)! });
+      if (existingId) return snapshot({ freshnessMatched: true, claimed: false, execution: this.executionById.get(existingId)! });
       const execution: CommunicationExecution = snapshot({ ...input, status: "ATTEMPTING", claimedAt: input.claimedAt });
       const attempt: CommunicationSendAttempt = snapshot({ id: `${input.id}:attempt:1`, organizationId: input.organizationId, executionId: input.id, attemptNumber: 1, state: "ATTEMPTING", providerId: input.providerId, providerRequestKey: input.providerRequestKey, startedAt: input.claimedAt, fingerprintAtAttempt: input.currentFingerprint, evidenceRefs: [...input.evidenceRefs] });
       this.executionById.set(input.id, execution);
       this.executionIdByDraft.set(draftKey, input.id);
       this.attemptsByExecution.set(input.id, [attempt]);
-      return snapshot({ claimed: true, execution, attempt });
+      return snapshot({ freshnessMatched: true, claimed: true, execution, attempt });
     });
   }
+
+  advanceSafetyState(input: Omit<CommunicationExecutionSafetyState, "version">): Promise<CommunicationExecutionSafetyState> {
+    return this.exclusive(() => {
+      const key = `${input.organizationId}\u0000${input.caseId}`;
+      const prior = this.safetyByCase.get(key);
+      const state = snapshot({ ...input, version: String(BigInt(prior?.version ?? "0") + BigInt(1)) });
+      this.safetyByCase.set(key, state);
+      return snapshot(state);
+    });
+  }
+
+  async getSafetyState(organizationId: string, caseId: string) { const value = this.safetyByCase.get(`${organizationId}\u0000${caseId}`); return value ? snapshot(value) : undefined; }
 
   complete(executionId: string, attemptId: string, outcome: CommunicationSendOutcome): Promise<CommunicationExecution> {
     return this.exclusive(() => {
