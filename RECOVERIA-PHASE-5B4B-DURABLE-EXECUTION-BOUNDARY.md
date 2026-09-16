@@ -56,7 +56,20 @@ The known external-side-effect race remains: state may change after revalidation
 
 Durable records contain IDs, fingerprints, evidence references, invoice scope, amount, and a non-reversible local content hash; message subject/body are not persisted or logged by this module. Tests use synthetic contacts and deterministic provider doubles only.
 
-No authorized RecoverIA PostgreSQL fixture database is configured. The integration harness reads only `RECOVERIA_TEST_DATABASE_URL`, requires `RECOVERIA_TEST_DATABASE_ALLOWLIST=recoveria-disposable-test`, and requires a database name visibly containing both RecoverIA and test/disposable semantics. It never falls back to `DATABASE_URL`. Without those proofs it skips; a configured unsafe target fails closed. The harness covers concurrent first claim/upsert, one attempt, safety-version rejection, conflicting outcome uniqueness, and transaction rollback atomicity. Live results remain blocked until an allowlisted disposable database is supplied and both migrations are applied there.
+The integration harness reads only `RECOVERIA_TEST_DATABASE_URL`, requires `RECOVERIA_TEST_DATABASE_ALLOWLIST=recoveria-disposable-test`, and requires a database name visibly containing both RecoverIA and test/disposable semantics. It never falls back to `DATABASE_URL`. Without those proofs it skips; a configured unsafe target fails closed. The harness covers concurrent first claim/upsert, one attempt, safety-version rejection, conflicting outcome uniqueness, and transaction rollback atomicity.
+
+On 2026-09-16, the complete migration history was applied only to an explicitly allowlisted, isolated RecoverIA disposable PostgreSQL test target. Prisma subsequently reported the schema up to date. No endpoint, host, username, password, or connection string is recorded here.
+
+The live PostgreSQL integration suite executed all four tests through `PrismaCommunicationExecutionStore` and passed:
+
+- two concurrent claims produced exactly one winner, one logical execution, and one attempt;
+- the concurrent first-create/upsert race converged on the tenant/draft unique identity;
+- a conflicting second outcome was rejected, leaving one immutable persisted outcome;
+- forced attempt-creation failure rolled the serializable transaction back to `READY`, with no half-committed execution/attempt state.
+
+The live schema exposed the expected primary keys, composite tenant foreign keys, tenant/draft and request-identity unique indexes, execution/attempt-number uniqueness, and one-outcome-per-attempt uniqueness. No `P2034` surfaced during this run; the three-attempt retry path remains active for serialization conflicts. The suite's scoped cascade cleanup removed all rows bearing its synthetic organization/case prefix, without truncating shared tables or deleting the database.
+
+The full regression run also passed: 18 test files and 393 tests, with all four PostgreSQL tests active and no skips. TypeScript, ESLint, Prisma generation and validation, the production build, and the security preflight passed. The private test environment file remained ignored, untracked, and permissioned for its owner only.
 
 ## Interrupted-attempt reconciliation runbook
 
@@ -70,4 +83,6 @@ Manual procedure: do not retry the provider call; identify the orphaned executio
 
 Resolved here: caller-state injection, trusted-loader contract, durable safety version/fingerprint CAS, explicit interrupted-attempt reconciliation, and SHA-256 provider identity, in addition to the existing execution vocabulary, HUMAN approval gate, durable draft idempotency, claim concurrency, append-only attempts, immutable outcomes, and UNKNOWN semantics.
 
-Still deferred are applying both execution migrations to an isolated test database, running live PostgreSQL integration/contention tests, canonical persistence and mutation hooks for every safety fact, a production trusted loader, provider implementation and provider-specific delivery semantics, provider-side UNKNOWN investigation, explicit manual retry execution, webhook processing, inbox synchronization, scheduling, cadence, AI drafting, case-wide fingerprint audit clarity, natural-language amount/date validation, contact-name validation outside greetings, minimum fact/evidence references, and per-invoice payment allocation.
+PostgreSQL migration, live contention, outcome uniqueness, rollback atomicity, scoped cleanup, and the complete regression gate are now validated on the isolated disposable target. Phase 5B.4B.1 is ready to close and Phase 5B.4C may begin as a separate authorized phase.
+
+Still deferred are canonical persistence and transactional mutation hooks for every safety fact, a production trusted loader, provider implementation and provider-specific delivery semantics, provider-side UNKNOWN investigation, explicit manual retry execution, webhook processing, inbox synchronization, scheduling, cadence, AI drafting, case-wide fingerprint audit clarity, natural-language amount/date validation, contact-name validation outside greetings, minimum fact/evidence references, and per-invoice payment allocation. The fundamental external-side-effect race also remains: a database transaction cannot atomically include a provider call, and correctness still depends on every safety-critical writer advancing the durable safety row.

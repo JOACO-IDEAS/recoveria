@@ -68,9 +68,13 @@ describe.skipIf(!authorized)("RecoverIA PostgreSQL execution concurrency", () =>
 
   it("rolls back ATTEMPTING when attempt creation fails", async () => {
     const input = await claimInput("draft-rollback");
+    const blockerExecutionId = `${input.id}:blocker`;
+    await prisma.communicationExecution.create({ data: { id: blockerExecutionId, organizationId, caseId, draftId: `${input.draftId}:blocker`, draftContentHash: input.draftContentHash, approvalId: input.approvalId, approvalActorId: input.approvalActorId, contactId: input.contactId, channelId: input.channelId, intent: input.intent, status: "ATTEMPTING", currentFingerprint: input.currentFingerprint, idempotencyKey: `${input.idempotencyKey}:blocker`, providerRequestKey: `${input.providerRequestKey}:blocker`, invoiceIds: [...input.invoiceIds], targetOutstandingCents: BigInt(input.targetOutstandingCents), evidenceRefs: [...input.evidenceRefs], revalidatedAt: new Date(input.revalidatedAt), claimedAt: new Date(input.claimedAt) } });
+    await prisma.communicationSendAttempt.create({ data: { id: `${input.id}:attempt:1`, organizationId, executionId: blockerExecutionId, attemptNumber: 1, state: "ATTEMPTING", providerRequestKey: `${input.providerRequestKey}:blocker`, startedAt: new Date(input.claimedAt), fingerprintAtAttempt: input.currentFingerprint, evidenceRefs: [] } });
     await prisma.communicationExecution.create({ data: { id: input.id, organizationId, caseId, draftId: input.draftId, draftContentHash: input.draftContentHash, approvalId: input.approvalId, approvalActorId: input.approvalActorId, contactId: input.contactId, channelId: input.channelId, intent: input.intent, status: "READY", currentFingerprint: input.currentFingerprint, idempotencyKey: input.idempotencyKey, providerRequestKey: input.providerRequestKey, invoiceIds: [...input.invoiceIds], targetOutstandingCents: BigInt(input.targetOutstandingCents), evidenceRefs: [...input.evidenceRefs], revalidatedAt: new Date(input.revalidatedAt) } });
-    await prisma.communicationSendAttempt.create({ data: { id: `${input.id}:attempt:1`, organizationId, executionId: input.id, attemptNumber: 99, state: "ATTEMPTING", providerRequestKey: input.providerRequestKey, startedAt: new Date(input.claimedAt), fingerprintAtAttempt: input.currentFingerprint, evidenceRefs: [] } });
     await expect(store.claim(input)).rejects.toBeTruthy();
     expect((await prisma.communicationExecution.findUniqueOrThrow({ where: { id: input.id } })).status).toBe("READY");
+    expect(await prisma.communicationSendAttempt.count({ where: { executionId: input.id } })).toBe(0);
+    expect(await prisma.communicationExecution.count({ where: { id: input.id, status: "ATTEMPTING", attempts: { none: {} } } })).toBe(0);
   });
 });
