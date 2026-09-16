@@ -1,15 +1,18 @@
 import { deepFreeze } from "@/lib/domain/evidence";
 import { communicationSnapshotFingerprint, evaluateCommunicationPreparation } from "./eligibility";
 import { validateCommunicationDraft } from "./validator";
-import type { CommunicationDraft, CommunicationDraftRequest, CommunicationPreparationInput, CommunicationSendAuthorization, CommunicationSendBlocker, CommunicationSendPreparation, CommunicationSendRevalidationResult, DraftApproval } from "./types";
+import type { CommunicationDraft, CommunicationDraftRequest, CommunicationPreparationInput, CommunicationSendBlocker, CommunicationSendPreparation, CommunicationSendRevalidationResult, DraftApproval } from "./types";
 
 const unique = <T extends string>(values: readonly T[]) => [...new Set(values)].sort();
 const same = (left: readonly unknown[], right: readonly unknown[]) => JSON.stringify(left) === JSON.stringify(right);
 const hash = (value: string) => { let result = 2166136261; for (let index = 0; index < value.length; index += 1) result = Math.imul(result ^ value.charCodeAt(index), 16777619); return (result >>> 0).toString(16).padStart(8, "0"); };
-const idempotencyKey = (tenantId: string, draftId: string, approvalId: string, fingerprint: string) => `communication-send:${hash(JSON.stringify([tenantId, draftId, approvalId, fingerprint]))}`;
+const idempotencyKey = (tenantId: string, draftId: string, fingerprint: string) => `communication-send:${hash(JSON.stringify([tenantId, draftId, fingerprint]))}`;
 
 function validateApprovalChain(draft: CommunicationDraft, request: CommunicationDraftRequest, approval: DraftApproval): void {
-  if (approval.status !== "APPROVED" || !approval.actorId || !approval.decidedAt) throw new Error("Approved human decision required for send preparation");
+  if (approval.status !== "APPROVED" || !approval.actor || approval.actor.kind !== "HUMAN" || !approval.actor.id || !approval.decidedAt) throw new Error("Explicit HUMAN approval required for send preparation");
+  const draftTime = Date.parse(draft.createdAt);
+  const decisionTime = Date.parse(approval.decidedAt);
+  if (!Number.isFinite(draftTime) || !Number.isFinite(decisionTime) || decisionTime < draftTime) throw new Error("Draft approval cannot predate draft creation");
   if (approval.draftId !== draft.id || draft.requestId !== request.id) throw new Error("Approval, draft, and request linkage mismatch");
   if (approval.organizationId !== draft.organizationId || request.organizationId !== draft.organizationId) throw new Error("Cross-tenant send approval rejected");
   if (request.caseId !== draft.caseId || request.authorizedFacts.caseId !== draft.caseId) throw new Error("Cross-case send approval rejected");
@@ -44,7 +47,7 @@ export function createCommunicationSendPreparation(input: {
     state: "REVALIDATION_REQUIRED",
     blockers: [],
     evidenceRefs: unique([...input.draft.evidenceRefs, ...input.draftRequest.evidenceRefs]),
-    idempotencyKey: idempotencyKey(input.draft.organizationId, input.draft.id, input.approval.id, input.draft.snapshotFingerprint),
+    idempotencyKey: idempotencyKey(input.draft.organizationId, input.draft.id, input.draft.snapshotFingerprint),
   });
 }
 
@@ -110,9 +113,9 @@ export function revalidateCommunicationForSend(input: {
   if (selectedEvaluation.blockers.includes("MISSING_ACTION_EVIDENCE")) blockers.push("EVIDENCE_CHANGED");
 
   const finalBlockers = unique(blockers);
-  const finalKey = idempotencyKey(preparation.tenantId, draft.id, input.approval.id, currentFingerprint);
+  const finalKey = idempotencyKey(preparation.tenantId, draft.id, currentFingerprint);
   const finalPreparation = deepFreeze({ ...preparation, currentSnapshotFingerprint: currentFingerprint, state: finalBlockers.length ? "BLOCKED_BEFORE_SEND" as const : "READY_TO_SEND" as const, blockers: finalBlockers, idempotencyKey: finalKey });
   if (finalBlockers.length) return deepFreeze({ preparation: finalPreparation });
-  const authorization: CommunicationSendAuthorization = deepFreeze({ id: `authorization:${finalKey}`, tenantId: preparation.tenantId, caseId: preparation.caseId, draftId: draft.id, approvalId: input.approval.id, contactId: draft.contactId, channelId: draft.channelId, intent: draft.intent, authorizedAt: input.asOf, asOf: input.asOf, currentFingerprint, idempotencyKey: finalKey, evidenceRefs: [...finalPreparation.evidenceRefs], state: "READY_TO_SEND" });
+  const authorization: NonNullable<CommunicationSendRevalidationResult["authorization"]> = deepFreeze({ id: `authorization:${finalKey}`, tenantId: preparation.tenantId, caseId: preparation.caseId, draftId: draft.id, approvalId: input.approval.id, contactId: draft.contactId, channelId: draft.channelId, intent: draft.intent, authorizedAt: input.asOf, asOf: input.asOf, currentFingerprint, idempotencyKey: finalKey, evidenceRefs: [...finalPreparation.evidenceRefs], state: "READY_TO_SEND" });
   return deepFreeze({ preparation: finalPreparation, authorization });
 }

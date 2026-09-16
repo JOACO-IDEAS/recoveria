@@ -6,6 +6,7 @@ import { claimOf, disputeOf, interactionCaseOf, interactionInput, interactionOf,
 import { invoiceOf } from "@/test/fixtures/phase-5b1-truth-set";
 import { communicationCase, communicationInput, communicationInvoice, inputWithInteraction } from "@/test/fixtures/phase-5b3-communication-truth-set";
 import { createCommunicationDraftRequest, createCommunicationSendPreparation, createValidatedCommunicationDraft, DeterministicTemplateDraftProvider, evaluateCommunicationPreparation, recordDraftApproval, revalidateCommunicationForSend } from ".";
+import * as communicationPreparation from ".";
 import type { CommunicationPreparationInput, DraftApproval } from ".";
 
 const requestMeta = { id: "request-send", requestedAt: "2026-09-11T13:00:00.000Z", requestedBy: "operator" };
@@ -15,7 +16,7 @@ const approvedScenario = (current = communicationInput()) => {
   const evaluation = evaluateCommunicationPreparation(current);
   const draftRequest = createCommunicationDraftRequest(evaluation, requestMeta);
   const draft = createValidatedCommunicationDraft(new DeterministicTemplateDraftProvider(), draftRequest);
-  const approval = recordDraftApproval(draft, { id: "approval-send", status: "APPROVED", actorId: "reviewer", decidedAt: "2026-09-11T13:30:00.000Z" });
+  const approval = recordDraftApproval(draft, { id: "approval-send", status: "APPROVED", actor: { kind: "HUMAN", id: "reviewer" }, decidedAt: "2026-09-11T13:30:00.000Z" });
   const preparation = createCommunicationSendPreparation({ draft, draftRequest, approval, ...preparationMeta });
   return { current, draftRequest, draft, approval, preparation };
 };
@@ -36,6 +37,33 @@ describe("Phase 5B.4A send state machine and revalidation", () => {
     expect(result.authorization).toMatchObject({ state: "READY_TO_SEND", authorizedAt: scenario.current.interactionContext.asOf, asOf: scenario.current.interactionContext.asOf });
     expect(Object.isFrozen(result)).toBe(true);
     expect(Object.isFrozen(result.authorization)).toBe(true);
+  });
+
+  it("accepts only explicit HUMAN approval provenance without inferring from actor ID", () => {
+    const scenario = approvedScenario();
+    expect(scenario.approval.actor).toEqual({ kind: "HUMAN", id: "reviewer" });
+    const humanNamedSystem = recordDraftApproval(scenario.draft, { id: "approval-human-system-name", status: "APPROVED", actor: { kind: "HUMAN", id: "system" }, decidedAt: "2026-09-11T13:45:00.000Z" });
+    expect(createCommunicationSendPreparation({ ...preparationMeta, id: "human-system-name", draft: scenario.draft, draftRequest: scenario.draftRequest, approval: humanNamedSystem }).state).toBe("REVALIDATION_REQUIRED");
+    expect(Object.isFrozen(scenario.approval.actor)).toBe(true);
+  });
+
+  it("rejects SYSTEM, empty, missing, malformed, and unknown approval actors", () => {
+    const scenario = approvedScenario();
+    for (const id of ["system", "scheduler"]) {
+      const systemApproval = recordDraftApproval(scenario.draft, { id: `approval-${id}`, status: "APPROVED", actor: { kind: "SYSTEM", id }, decidedAt: "2026-09-11T13:45:00.000Z" });
+      expect(() => createCommunicationSendPreparation({ ...preparationMeta, draft: scenario.draft, draftRequest: scenario.draftRequest, approval: systemApproval })).toThrow(/Explicit HUMAN approval/);
+    }
+    expect(() => recordDraftApproval(scenario.draft, { id: "empty-human", status: "APPROVED", actor: { kind: "HUMAN", id: "" }, decidedAt: "2026-09-11T13:45:00.000Z" })).toThrow(/explicit valid actor/);
+    expect(() => recordDraftApproval(scenario.draft, { id: "missing-actor", status: "APPROVED", decidedAt: "2026-09-11T13:45:00.000Z" } as never)).toThrow(/explicit valid actor/);
+    expect(() => recordDraftApproval(scenario.draft, { id: "malformed-actor", status: "APPROVED", actor: "reviewer", decidedAt: "2026-09-11T13:45:00.000Z" } as never)).toThrow(/explicit valid actor/);
+    expect(() => recordDraftApproval(scenario.draft, { id: "unknown-actor", status: "APPROVED", actor: { kind: "IMPORT", id: "importer" }, decidedAt: "2026-09-11T13:45:00.000Z" } as never)).toThrow(/explicit valid actor/);
+  });
+
+  it("rejects approval chronology that predates draft creation", () => {
+    const scenario = approvedScenario();
+    expect(() => recordDraftApproval(scenario.draft, { id: "approval-before-draft", status: "APPROVED", actor: { kind: "HUMAN", id: "reviewer" }, decidedAt: "2026-09-11T12:59:59.999Z" })).toThrow(/cannot predate/);
+    const impossible = { ...scenario.approval, decidedAt: "2026-09-11T12:59:59.999Z" };
+    expect(() => createCommunicationSendPreparation({ ...preparationMeta, draft: scenario.draft, draftRequest: scenario.draftRequest, approval: impossible })).toThrow(/cannot predate/);
   });
 
   it("blocks a decreased balance without editing the approved draft", () => {
@@ -101,6 +129,15 @@ describe("Phase 5B.4A send state machine and revalidation", () => {
     expect(revalidate(approved, current).preparation.blockers).toEqual(expect.arrayContaining(["PROMISE_STATE_CHANGED", "STALE_DRAFT"]));
   });
 
+  it("blocks a broken-promise draft after the relied-on promise is superseded", () => {
+    const approved = approvedScenario(inputWithInteraction({ promise: "BROKEN" }));
+    const prior = promiseOf("promise-communication", { promisedDate: "2026-09-09" });
+    const replacement = promiseOf("promise-replacement", { supersedesPromiseId: prior.id, promisedDate: "2026-09-20" });
+    const context = deriveCollectionInteractionContext(interactionInput({ case: communicationCase, contactResolution: approved.current.interactionContext.relevantContacts, promises: [prior, replacement] }));
+    const current = { ...approved.current, interactionContext: context };
+    expect(revalidate(approved, current).preparation.blockers).toEqual(expect.arrayContaining(["PROMISE_STATE_CHANGED", "STALE_DRAFT"]));
+  });
+
   it("blocks when the selected contact relationship is superseded", () => {
     const scenario = approvedScenario();
     const juan = contactOf("juan", { displayName: "Juan García" });
@@ -155,7 +192,7 @@ describe("Phase 5B.4A send state machine and revalidation", () => {
   it("hard-rejects cross-tenant approvals, wrong cases, and rejected approvals", () => {
     const scenario = approvedScenario();
     expect(() => createCommunicationSendPreparation({ ...scenario, ...preparationMeta, approval: { ...scenario.approval, organizationId: "other" } })).toThrow(/Cross-tenant/);
-    expect(() => createCommunicationSendPreparation({ ...scenario, ...preparationMeta, approval: { ...scenario.approval, status: "REJECTED" } })).toThrow(/Approved human decision/);
+    expect(() => createCommunicationSendPreparation({ ...scenario, ...preparationMeta, approval: { ...scenario.approval, status: "REJECTED" } })).toThrow(/Explicit HUMAN approval/);
     expect(() => revalidateCommunicationForSend({ ...scenario, current: { ...scenario.current, caseId: "other-case" }, asOf: scenario.current.interactionContext.asOf })).toThrow(/Cross-case/);
   });
 
@@ -179,6 +216,47 @@ describe("Phase 5B.4A send state machine and revalidation", () => {
     expect(revalidate(scenario)).toEqual(revalidate({ ...scenario, preparation: duplicate }));
   });
 
+  it("maps independent approvals of the same draft to one execution identity", () => {
+    const first = approvedScenario();
+    const secondApproval = recordDraftApproval(first.draft, { id: "approval-send-2", status: "APPROVED", actor: { kind: "HUMAN", id: "second-reviewer" }, decidedAt: "2026-09-11T13:45:00.000Z" });
+    const secondPreparation = createCommunicationSendPreparation({ ...preparationMeta, id: "send-preparation-2", draft: first.draft, draftRequest: first.draftRequest, approval: secondApproval });
+    const firstResult = revalidate(first);
+    const secondResult = revalidateCommunicationForSend({ preparation: secondPreparation, draft: first.draft, draftRequest: first.draftRequest, approval: secondApproval, current: first.current, asOf: first.current.interactionContext.asOf });
+    expect(secondPreparation.idempotencyKey).toBe(first.preparation.idempotencyKey);
+    expect(secondResult.authorization?.id).toBe(firstResult.authorization?.id);
+    expect(secondResult.authorization?.idempotencyKey).toBe(firstResult.authorization?.idempotencyKey);
+    expect(secondResult.authorization?.approvalId).not.toBe(firstResult.authorization?.approvalId);
+  });
+
+  it("allows a new draft a distinct execution identity", () => {
+    const first = approvedScenario();
+    const evaluation = evaluateCommunicationPreparation(first.current);
+    const secondRequest = createCommunicationDraftRequest(evaluation, { ...requestMeta, id: "request-send-new-draft" });
+    const secondDraft = createValidatedCommunicationDraft(new DeterministicTemplateDraftProvider(), secondRequest);
+    const secondApproval = recordDraftApproval(secondDraft, { id: "approval-new-draft", status: "APPROVED", actor: { kind: "HUMAN", id: "reviewer" }, decidedAt: "2026-09-11T13:45:00.000Z" });
+    const secondPreparation = createCommunicationSendPreparation({ ...preparationMeta, id: "send-preparation-new-draft", draft: secondDraft, draftRequest: secondRequest, approval: secondApproval });
+    const secondResult = revalidateCommunicationForSend({ preparation: secondPreparation, draft: secondDraft, draftRequest: secondRequest, approval: secondApproval, current: first.current, asOf: first.current.interactionContext.asOf });
+    expect(secondDraft.id).not.toBe(first.draft.id);
+    expect(secondResult.authorization?.idempotencyKey).not.toBe(revalidate(first).authorization?.idempotencyKey);
+  });
+
+  it("does not let a new approval revive the same stale draft", () => {
+    const scenario = approvedScenario();
+    const secondApproval = recordDraftApproval(scenario.draft, { id: "approval-stale-2", status: "APPROVED", actor: { kind: "HUMAN", id: "reviewer-2" }, decidedAt: "2026-09-11T13:45:00.000Z" });
+    const preparation = createCommunicationSendPreparation({ ...preparationMeta, id: "send-preparation-stale-2", draft: scenario.draft, draftRequest: scenario.draftRequest, approval: secondApproval });
+    const current = { ...scenario.current, invoices: [communicationInvoice("invoice-a", { outstandingCents: 700_000_00, overdueCents: 700_000_00 })] };
+    const result = revalidateCommunicationForSend({ preparation, draft: scenario.draft, draftRequest: scenario.draftRequest, approval: secondApproval, current, asOf: current.interactionContext.asOf });
+    expect(result.preparation.blockers).toEqual(expect.arrayContaining(["STALE_DRAFT", "BALANCE_CHANGED"]));
+    expect(result.authorization).toBeUndefined();
+  });
+
+  it("exposes no execution function or alternate authorization factory for fabricated authorization objects", () => {
+    const fabricated = { state: "READY_TO_SEND", id: "fabricated" };
+    const unsafeExports = Object.keys(communicationPreparation).filter(name => /^(?:send|execute|createCommunicationSendAuthorization)$/i.test(name));
+    expect(fabricated.state).toBe("READY_TO_SEND");
+    expect(unsafeExports).toEqual([]);
+  });
+
   it("does not stale for unrelated chronology or a non-safety display label", () => {
     const base = communicationInput();
     const mixedCase = interactionCaseOf(["invoice-a", "invoice-b"]);
@@ -187,6 +265,15 @@ describe("Phase 5B.4A send state machine and revalidation", () => {
     const currentContext = deriveCollectionInteractionContext(interactionInput({ case: mixedCase, contactResolution: base.interactionContext.relevantContacts, interactions: [interactionOf("unrelated", "CONTACT_ATTEMPTED", { channelId: "email-juan", relatedInvoiceIds: ["invoice-b"] })] }));
     const current = { ...approved.current, administrationName: "Etiqueta visual no operativa", interactionContext: currentContext };
     expect(revalidate(approved, current).preparation).toMatchObject({ state: "READY_TO_SEND", blockers: [] });
+  });
+
+  it("safely over-blocks reordered invoice arrays until fingerprint canonicalization", () => {
+    const base = communicationInput();
+    const mixedCase = interactionCaseOf(["invoice-a", "invoice-b"]);
+    const context = deriveCollectionInteractionContext(interactionInput({ case: mixedCase, contactResolution: base.interactionContext.relevantContacts }));
+    const approved = approvedScenario(communicationInput({ interactionContext: context, invoices: [communicationInvoice("invoice-a"), communicationInvoice("invoice-b")], projection: { ...base.projection, collectibleInvoiceIds: ["invoice-a"], excludedInvoiceIds: ["invoice-b"] } }));
+    const current = { ...approved.current, invoices: [...approved.current.invoices].reverse() };
+    expect(revalidate(approved, current).preparation).toMatchObject({ state: "BLOCKED_BEFORE_SEND", blockers: ["STALE_DRAFT"] });
   });
 
   it("blocks changed evidence and has no provider or send effects", () => {

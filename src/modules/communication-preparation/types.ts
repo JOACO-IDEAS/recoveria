@@ -115,7 +115,8 @@ export interface CommunicationDraft {
 
 export interface CommunicationDraftProvider { readonly id: string; draft(request: CommunicationDraftRequest): CommunicationDraft }
 export interface DraftValidationResult { readonly valid: boolean; readonly errors: readonly string[] }
-export interface DraftApproval { readonly id: string; readonly organizationId: string; readonly draftId: string; readonly status: "APPROVED" | "REJECTED"; readonly actorId: string; readonly decidedAt: string; readonly reason?: string }
+export interface DraftApprovalActor { readonly kind: "HUMAN" | "SYSTEM"; readonly id: string }
+export interface DraftApproval { readonly id: string; readonly organizationId: string; readonly draftId: string; readonly status: "APPROVED" | "REJECTED"; readonly actor: DraftApprovalActor; readonly decidedAt: string; readonly reason?: string }
 
 export type CommunicationSendState = "DRAFT" | "APPROVED" | "REVALIDATION_REQUIRED" | "READY_TO_SEND" | "BLOCKED_BEFORE_SEND";
 export type CommunicationSendBlocker =
@@ -157,24 +158,23 @@ export interface CommunicationSendPreparation {
   readonly idempotencyKey: string;
 }
 
-export interface CommunicationSendAuthorization {
-  readonly id: string;
-  readonly tenantId: string;
-  readonly caseId: string;
-  readonly draftId: string;
-  readonly approvalId: string;
-  readonly contactId: string;
-  readonly channelId: string;
-  readonly intent: CommunicationIntent;
-  readonly authorizedAt: string;
-  readonly asOf: string;
-  readonly currentFingerprint: string;
-  readonly idempotencyKey: string;
-  readonly evidenceRefs: readonly string[];
-  readonly state: "READY_TO_SEND";
-}
-
 export interface CommunicationSendRevalidationResult {
   readonly preparation: CommunicationSendPreparation;
-  readonly authorization?: CommunicationSendAuthorization;
+  /** Same-call revalidation result only. This structural value is not portable permission for provider execution. */
+  readonly authorization?: {
+    readonly id: string;
+    readonly tenantId: string;
+    readonly caseId: string;
+    readonly draftId: string;
+    readonly approvalId: string;
+    readonly contactId: string;
+    readonly channelId: string;
+    readonly intent: CommunicationIntent;
+    readonly authorizedAt: string;
+    readonly asOf: string;
+    readonly currentFingerprint: string;
+    readonly idempotencyKey: string;
+    readonly evidenceRefs: readonly string[];
+    readonly state: "READY_TO_SEND";
+  };
 }

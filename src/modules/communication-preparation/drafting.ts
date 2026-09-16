@@ -37,8 +37,11 @@ export function createValidatedCommunicationDraft(provider: CommunicationDraftPr
 }
 
 export function recordDraftApproval(draft: CommunicationDraft, input: Omit<DraftApproval, "draftId" | "organizationId">): DraftApproval {
-  if (!input.id || !input.actorId || !input.decidedAt) throw new Error("Draft approval decision requires explicit human identity and time");
-  return deepFreeze({ ...input, organizationId: draft.organizationId, draftId: draft.id });
+  if (!input.id || !input.actor || (input.actor.kind !== "HUMAN" && input.actor.kind !== "SYSTEM") || !input.actor.id || !input.decidedAt) throw new Error("Draft approval decision requires an explicit valid actor and time");
+  const draftTime = Date.parse(draft.createdAt);
+  const decisionTime = Date.parse(input.decidedAt);
+  if (!Number.isFinite(draftTime) || !Number.isFinite(decisionTime) || decisionTime < draftTime) throw new Error("Draft approval cannot predate draft creation");
+  return deepFreeze({ ...input, actor: { ...input.actor }, organizationId: draft.organizationId, draftId: draft.id });
 }
 
 export function isCommunicationDraftStale(draft: CommunicationDraft, current: CommunicationPreparationInput): boolean {

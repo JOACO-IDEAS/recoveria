@@ -277,8 +277,8 @@ describe("Phase 5B.3 communication preparation", () => {
 
   it("records human approval without sending", () => {
     const { draft } = readyDraft();
-    const approval = recordDraftApproval(draft, { id: "approval-1", status: "APPROVED", actorId: "reviewer", decidedAt: "2026-09-11T15:00:00.000Z" });
-    expect(approval).toMatchObject({ draftId: draft.id, status: "APPROVED", actorId: "reviewer" });
+    const approval = recordDraftApproval(draft, { id: "approval-1", status: "APPROVED", actor: { kind: "HUMAN", id: "reviewer" }, decidedAt: "2026-09-11T15:00:00.000Z" });
+    expect(approval).toMatchObject({ draftId: draft.id, status: "APPROVED", actor: { kind: "HUMAN", id: "reviewer" } });
     expect(JSON.stringify(approval)).not.toMatch(/sent|provider|delivery/i);
   });
 
