@@ -1,7 +1,7 @@
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "@prisma/client";
 import { InMemoryCommunicationExecutionStore, PrismaCommunicationExecutionStore } from "@/modules/communication-execution";
-import { CONTROLLED_SMOKE, ControlledSmokeDryRunProvider, assertControlledSmokeCliArguments, controlledSmokeConfigurationFromEnvironment, createRealSmokeProvider, runControlledEmailSmokeTest } from "@/modules/controlled-email-smoke";
+import { CONTROLLED_SMOKE, ControlledSmokeDryRunProvider, assertControlledSmokeCliArguments, controlledSmokeConfigurationFromEnvironment, controlledSmokeDryRunOperatorReport, createRealSmokeProvider, runControlledEmailSmokeTest } from "@/modules/controlled-email-smoke";
 
 async function main(): Promise<void> {
   assertControlledSmokeCliArguments(process.argv.slice(2));
@@ -11,7 +11,7 @@ async function main(): Promise<void> {
     if (configuration.mode === "DRY_RUN") {
       const provider = new ControlledSmokeDryRunProvider();
       const { result } = await runControlledEmailSmokeTest({ configuration, store: new InMemoryCommunicationExecutionStore(), provider });
-      console.log(JSON.stringify({ mode: "DRY_RUN", providerNetworkCalls: 0, realEmailsSent: 0, localExecutionResult: result.kind, readyForExplicitRealGate: result.kind === "OUTCOME_RECORDED" }));
+      console.log(JSON.stringify(controlledSmokeDryRunOperatorReport(result)));
     } else {
       prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: configuration.smokeDatabaseUrl!, max: 2 }) });
       const existingOrganization = await prisma.organization.findUnique({ where: { id: CONTROLLED_SMOKE.organizationId } });

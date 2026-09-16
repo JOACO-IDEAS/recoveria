@@ -56,6 +56,15 @@ export class ControlledSmokeDryRunProvider implements CommunicationExecutionProv
   async attempt() { this.calls += 1; return { status: "FAILED" as const, reasonCode: "DRY_RUN_PROVIDER_NETWORK_DISABLED" }; }
 }
 
+export const controlledSmokeDryRunOperatorReport = (result: ExecuteCommunicationResult) => ({
+  mode: "DRY_RUN" as const,
+  providerNetworkCalls: 0,
+  realEmailsSent: 0,
+  kind: result.kind,
+  ...(result.kind === "OUTCOME_RECORDED" ? { reasonCode: result.outcome.reasonCode } : {}),
+  readyForExplicitRealGate: result.kind === "OUTCOME_RECORDED",
+});
+
 export async function runControlledEmailSmokeTest(input: {
   readonly configuration: ControlledSmokeConfiguration;
   readonly store: CommunicationExecutionStore;

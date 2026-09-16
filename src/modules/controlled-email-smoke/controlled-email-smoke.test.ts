@@ -4,7 +4,7 @@ import type { CommunicationExecutionProvider, CommunicationOutcomeStatus } from 
 import { InMemoryCommunicationDeliveryStore, ResendDeliveryWebhookService } from "@/modules/delivery-reconciliation";
 import { signResendWebhook } from "@/modules/email-provider";
 import type { EmailHttpClient } from "@/modules/email-provider";
-import { CONTROLLED_SMOKE, ControlledSmokeResendWebhookAdapter, assertControlledSmokeCliArguments, controlledSmokeConfigurationFromEnvironment, createControlledSmokeScenario, createDefaultDryRunHarness, createRealSmokeProvider, runControlledEmailSmokeTest } from ".";
+import { CONTROLLED_SMOKE, ControlledSmokeResendWebhookAdapter, assertControlledSmokeCliArguments, controlledSmokeConfigurationFromEnvironment, controlledSmokeDryRunOperatorReport, createControlledSmokeScenario, createDefaultDryRunHarness, createRealSmokeProvider, runControlledEmailSmokeTest } from ".";
 
 class CountingProvider implements CommunicationExecutionProvider {
   readonly id = "synthetic-controlled-smoke-provider";
@@ -39,6 +39,9 @@ describe("Phase 5B.4C.1 controlled email smoke wiring", () => {
     expect(harness.configuration.mode).toBe("DRY_RUN");
     expect(result.result).toMatchObject({ kind: "OUTCOME_RECORDED", outcome: { status: "FAILED", reasonCode: "DRY_RUN_PROVIDER_NETWORK_DISABLED" } });
     expect(harness.provider.calls).toBe(1);
+    const output = JSON.stringify(controlledSmokeDryRunOperatorReport(result.result));
+    expect(JSON.parse(output)).toMatchObject({ kind: "OUTCOME_RECORDED", reasonCode: "DRY_RUN_PROVIDER_NETWORK_DISABLED", providerNetworkCalls: 0, realEmailsSent: 0 });
+    expect(output).not.toMatch(/synthetic-key|postgresql:\/\/|authorization|recipient/i);
   });
 
   it.each([
