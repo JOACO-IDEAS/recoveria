@@ -190,6 +190,12 @@ enum CommunicationOutcomeStatus {
   UNKNOWN
 }
 
+enum CommunicationDeliveryStatus {
+  DELIVERED
+  BOUNCED
+  DELIVERY_UNKNOWN
+}
+
 model Organization {
   id                  String                     @id @default(cuid())
   name                String
@@ -223,6 +229,7 @@ model Organization {
   communicationExecutions CommunicationExecution[]
   communicationAttempts   CommunicationSendAttempt[]
   communicationOutcomes   CommunicationSendOutcome[]
+  communicationDeliveryEvents CommunicationDeliveryEvent[]
   communicationSafetyStates CommunicationExecutionSafetyState[]
 }
 
@@ -648,6 +655,7 @@ model CommunicationExecution {
   organization           Organization                 @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   case                   CollectionCase               @relation(fields: [organizationId, caseId], references: [organizationId, id], onDelete: Restrict)
   attempts               CommunicationSendAttempt[]
+  deliveryEvents         CommunicationDeliveryEvent[]
 
   @@unique([organizationId, draftId])
   @@unique([organizationId, id])
@@ -685,9 +693,11 @@ model CommunicationSendAttempt {
   organization         Organization              @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   execution            CommunicationExecution    @relation(fields: [organizationId, executionId], references: [organizationId, id], onDelete: Restrict)
   outcome              CommunicationSendOutcome?
+  deliveryEvents       CommunicationDeliveryEvent[]
 
   @@unique([executionId, attemptNumber])
   @@unique([organizationId, id])
+  @@unique([organizationId, executionId, id])
   @@index([organizationId, executionId, startedAt])
 }
 
@@ -698,11 +708,35 @@ model CommunicationSendOutcome {
   status         CommunicationOutcomeStatus
   occurredAt     DateTime
   reasonCode     String
+  providerMessageId String?
   organization   Organization               @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   attempt        CommunicationSendAttempt   @relation(fields: [organizationId, attemptId], references: [organizationId, id], onDelete: Restrict)
 
   @@unique([organizationId, attemptId])
+  @@unique([organizationId, providerMessageId])
   @@index([organizationId, status, occurredAt])
+}
+
+model CommunicationDeliveryEvent {
+  id                String                      @id
+  organizationId    String
+  executionId       String
+  attemptId         String
+  providerId        String
+  providerMessageId String
+  providerEventId   String
+  status            CommunicationDeliveryStatus
+  occurredAt        DateTime
+  evidenceCode      String
+  payloadHash       String
+  createdAt         DateTime                    @default(now())
+  organization      Organization                @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  execution         CommunicationExecution      @relation(fields: [organizationId, executionId], references: [organizationId, id], onDelete: Restrict)
+  attempt           CommunicationSendAttempt    @relation(fields: [organizationId, executionId, attemptId], references: [organizationId, executionId, id], onDelete: Restrict)
+
+  @@unique([organizationId, providerId, providerEventId])
+  @@index([organizationId, executionId, occurredAt])
+  @@index([organizationId, providerId, providerMessageId])
 }
 
 model CollectionCaseReceivable {

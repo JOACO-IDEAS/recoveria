@@ -49,9 +49,9 @@ const withInvalidContact = (channelStatus?: "INVALID") => {
 
 describe("Phase 5B.4B durable communication execution boundary", () => {
   it("creates one execution, immutable attempt, and ACCEPTED outcome", async () => {
-    const scenario = approvedScenario(); const store = new InMemoryCommunicationExecutionStore(); const provider = providerResult("ACCEPTED", "PROVIDER_ACKNOWLEDGED");
+    const scenario = approvedScenario(); const store = new InMemoryCommunicationExecutionStore(); const provider = new SyntheticProvider(async () => ({ status: "ACCEPTED", reasonCode: "PROVIDER_ACKNOWLEDGED", providerMessageId: "message-synthetic" }));
     const result = await execute(scenario, store, provider);
-    expect(result).toMatchObject({ kind: "OUTCOME_RECORDED", execution: { status: "ACCEPTED" }, attempt: { attemptNumber: 1, state: "ATTEMPTING" }, outcome: { status: "ACCEPTED" }, retryEligibility: "NEVER" });
+    expect(result).toMatchObject({ kind: "OUTCOME_RECORDED", execution: { status: "ACCEPTED" }, attempt: { attemptNumber: 1, state: "ATTEMPTING" }, outcome: { status: "ACCEPTED", providerMessageId: "message-synthetic" }, retryEligibility: "NEVER" });
     expect(provider.calls).toBe(1);
     if (result.kind === "OUTCOME_RECORDED") { expect(Object.isFrozen(result.attempt)).toBe(true); expect(await store.attempts(result.execution.id)).toHaveLength(1); expect(await store.outcomes(result.execution.id)).toHaveLength(1); }
   });
@@ -90,6 +90,15 @@ describe("Phase 5B.4B durable communication execution boundary", () => {
     const result = await new CommunicationExecutionService(store, stateLoader, provider).execute(callerPayload);
     expect(result.kind).toBe("BLOCKED_BEFORE_ATTEMPT");
     expect(provider.calls).toBe(0);
+  });
+
+  it("blocks approved-fact recipient substitution before claim or provider invocation", async () => {
+    const scenario = approvedScenario(); const store = new InMemoryCommunicationExecutionStore(); const provider = providerResult("ACCEPTED");
+    const substituted = { ...scenario, draftRequest: { ...scenario.draftRequest, authorizedFacts: { ...scenario.draftRequest.authorizedFacts, channel: { ...scenario.draftRequest.authorizedFacts.channel, normalizedValue: "substitute@example.invalid" } } } };
+    const result = await execute(substituted, store, provider);
+    expect(result).toEqual({ kind: "BLOCKED_BEFORE_ATTEMPT", blockers: ["AUTHORIZED_EMAIL_DESTINATION_MISMATCH"] });
+    expect(provider.calls).toBe(0);
+    expect(await store.get(executionIdFor(scenario.draft.organizationId, scenario.draft.id))).toBeUndefined();
   });
 
   it("uses one logical execution for a second approval of the same draft", async () => {

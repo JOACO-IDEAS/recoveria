@@ -46,6 +46,7 @@ export interface CommunicationSendOutcome {
   readonly status: CommunicationOutcomeStatus;
   readonly occurredAt: string;
   readonly reasonCode: string;
+  readonly providerMessageId?: string;
 }
 
 export interface CommunicationExecutionSafetyState {
@@ -89,11 +90,24 @@ export interface CommunicationExecutionStore {
 export interface CommunicationExecutionProviderRequest {
   readonly providerRequestKey: string;
   readonly draft: CommunicationDraft;
+  readonly email: {
+    readonly authorizedChannelId: string;
+    readonly authorizedRecipient: string;
+    readonly to: string;
+    readonly subject: string;
+    readonly body: string;
+  };
+}
+
+export interface CommunicationExecutionProviderResult {
+  readonly status: CommunicationOutcomeStatus;
+  readonly reasonCode: string;
+  readonly providerMessageId?: string;
 }
 
 export interface CommunicationExecutionProvider {
   readonly id: string;
-  attempt(request: CommunicationExecutionProviderRequest): Promise<{ readonly status: CommunicationOutcomeStatus; readonly reasonCode: string }>;
+  attempt(request: CommunicationExecutionProviderRequest): Promise<CommunicationExecutionProviderResult>;
 }
 
 export interface ExecuteCommunicationInput {

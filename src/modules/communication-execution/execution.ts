@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { deepFreeze } from "@/lib/domain/evidence";
 import { communicationSnapshotFingerprint, revalidateCommunicationForSend } from "@/modules/communication-preparation";
-import type { CommunicationExecution, CommunicationExecutionClaimInput, CommunicationExecutionProvider, CommunicationExecutionStateLoader, CommunicationExecutionStore, CommunicationOutcomeStatus, CommunicationRetryEligibility, CommunicationSendOutcome, ExecuteCommunicationInput, ExecuteCommunicationResult } from "./types";
+import type { CommunicationExecution, CommunicationExecutionClaimInput, CommunicationExecutionProvider, CommunicationExecutionProviderResult, CommunicationExecutionStateLoader, CommunicationExecutionStore, CommunicationOutcomeStatus, CommunicationRetryEligibility, CommunicationSendOutcome, ExecuteCommunicationInput, ExecuteCommunicationResult } from "./types";
 
 const hash = (value: string) => { let result = 2166136261; for (let index = 0; index < value.length; index += 1) result = Math.imul(result ^ value.charCodeAt(index), 16777619); return (result >>> 0).toString(16).padStart(8, "0"); };
 export const executionIdFor = (organizationId: string, draftId: string) => `communication-execution:${hash(JSON.stringify([organizationId, draftId]))}`;
@@ -24,7 +24,7 @@ export function retryEligibilityFor(status: CommunicationExecution["status"]): C
 const outcomeFromError = (error: unknown): { status: CommunicationOutcomeStatus; reasonCode: string } => error instanceof CommunicationProviderAttemptError && error.transmission === "NOT_STARTED"
   ? { status: "FAILED", reasonCode: "FAILED_BEFORE_PROVIDER_ACCEPTANCE" }
   : { status: "UNKNOWN", reasonCode: "DELIVERY_OUTCOME_UNKNOWN" };
-const safeProviderResult = (value: { readonly status: CommunicationOutcomeStatus; readonly reasonCode: string }): { status: CommunicationOutcomeStatus; reasonCode: string } => (["ACCEPTED", "FAILED", "UNKNOWN"] as const).includes(value.status) && Boolean(value.reasonCode)
+const safeProviderResult = (value: CommunicationExecutionProviderResult): CommunicationExecutionProviderResult => (["ACCEPTED", "FAILED", "UNKNOWN"] as const).includes(value.status) && Boolean(value.reasonCode) && (!value.providerMessageId || value.providerMessageId.length <= 200)
   ? value
   : { status: "UNKNOWN", reasonCode: "INVALID_OR_AMBIGUOUS_PROVIDER_RESPONSE" };
 
@@ -38,6 +38,11 @@ async function executeCommunicationBoundary(input: ExecuteCommunicationInput, st
   const revalidatedTime = Date.parse(snapshot.observedAt);
   if (!input.executionRequestedAt || !Number.isFinite(requestedTime) || !Number.isFinite(revalidatedTime) || requestedTime < revalidatedTime) throw new Error("Execution requires a valid request time at or after revalidation");
   const authorization = revalidation.authorization;
+  const authorizedChannel = snapshot.current.interactionContext.relevantContacts.readyContacts
+    .find(candidate => candidate.contact.id === authorization.contactId)?.eligibleChannels
+    .find(channel => channel.id === authorization.channelId && channel.type === "EMAIL");
+  if (!authorizedChannel?.normalizedValue || input.draft.channel !== "EMAIL" || !input.draft.subject) return deepFreeze({ kind: "BLOCKED_BEFORE_ATTEMPT", blockers: ["AUTHORIZED_EMAIL_DESTINATION_UNAVAILABLE"] });
+  if (input.draftRequest.authorizedFacts.channel.id !== authorizedChannel.id || input.draftRequest.authorizedFacts.channel.normalizedValue !== authorizedChannel.normalizedValue) return deepFreeze({ kind: "BLOCKED_BEFORE_ATTEMPT", blockers: ["AUTHORIZED_EMAIL_DESTINATION_MISMATCH"] });
   const claimInput: CommunicationExecutionClaimInput = {
     id: executionIdFor(authorization.tenantId, authorization.draftId),
     organizationId: authorization.tenantId,
@@ -65,14 +70,14 @@ async function executeCommunicationBoundary(input: ExecuteCommunicationInput, st
   if (!claim.freshnessMatched) return deepFreeze({ kind: "SAFETY_STATE_CHANGED", blockers: ["SAFETY_SNAPSHOT_CHANGED"] as const });
   if (!claim.claimed || !claim.attempt) return deepFreeze({ kind: "DUPLICATE_REQUEST", execution: claim.execution, retryEligibility: retryEligibilityFor(claim.execution.status) });
 
-  let providerResult: { status: CommunicationOutcomeStatus; reasonCode: string };
+  let providerResult: CommunicationExecutionProviderResult;
   try {
-    providerResult = safeProviderResult(await provider.attempt({ providerRequestKey: claim.execution.providerRequestKey, draft: input.draft }));
+    providerResult = safeProviderResult(await provider.attempt({ providerRequestKey: claim.execution.providerRequestKey, draft: input.draft, email: { authorizedChannelId: authorizedChannel.id, authorizedRecipient: authorizedChannel.normalizedValue, to: authorizedChannel.normalizedValue, subject: input.draft.subject, body: input.draft.body } }));
   } catch (error) {
     if (error instanceof SimulatedExecutionCrash) throw error;
     providerResult = outcomeFromError(error);
   }
-  const outcome: CommunicationSendOutcome = deepFreeze({ id: `${claim.attempt.id}:outcome`, organizationId: claim.execution.organizationId, attemptId: claim.attempt.id, status: providerResult.status, occurredAt: input.executionRequestedAt, reasonCode: providerResult.reasonCode });
+  const outcome: CommunicationSendOutcome = deepFreeze({ id: `${claim.attempt.id}:outcome`, organizationId: claim.execution.organizationId, attemptId: claim.attempt.id, status: providerResult.status, occurredAt: input.executionRequestedAt, reasonCode: providerResult.reasonCode, ...(providerResult.providerMessageId ? { providerMessageId: providerResult.providerMessageId } : {}) });
   const execution = await store.complete(claim.execution.id, claim.attempt.id, outcome);
   return deepFreeze({ kind: "OUTCOME_RECORDED", execution, attempt: claim.attempt, outcome, retryEligibility: retryEligibilityFor(execution.status) });
 }

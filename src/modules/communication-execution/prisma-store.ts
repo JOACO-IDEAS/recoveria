@@ -8,7 +8,7 @@ type DbOutcome = Awaited<ReturnType<PrismaClient["communicationSendOutcome"]["fi
 
 const executionOf = (row: DbExecution): CommunicationExecution => deepFreeze({ id: row.id, organizationId: row.organizationId, caseId: row.caseId, draftId: row.draftId, draftContentHash: row.draftContentHash, approvalId: row.approvalId, approvalActorId: row.approvalActorId, contactId: row.contactId, channelId: row.channelId, intent: row.intent, status: row.status, currentFingerprint: row.currentFingerprint, idempotencyKey: row.idempotencyKey, providerRequestKey: row.providerRequestKey, invoiceIds: [...row.invoiceIds], targetOutstandingCents: Number(row.targetOutstandingCents), evidenceRefs: [...row.evidenceRefs], revalidatedAt: row.revalidatedAt.toISOString(), claimedAt: row.claimedAt?.toISOString() });
 const attemptOf = (row: DbAttempt): CommunicationSendAttempt => deepFreeze({ id: row.id, organizationId: row.organizationId, executionId: row.executionId, attemptNumber: row.attemptNumber, state: row.state, providerId: row.providerId ?? undefined, providerRequestKey: row.providerRequestKey, startedAt: row.startedAt.toISOString(), fingerprintAtAttempt: row.fingerprintAtAttempt, evidenceRefs: [...row.evidenceRefs] });
-const outcomeOf = (row: DbOutcome): CommunicationSendOutcome => deepFreeze({ id: row.id, organizationId: row.organizationId, attemptId: row.attemptId, status: row.status, occurredAt: row.occurredAt.toISOString(), reasonCode: row.reasonCode });
+const outcomeOf = (row: DbOutcome): CommunicationSendOutcome => deepFreeze({ id: row.id, organizationId: row.organizationId, attemptId: row.attemptId, status: row.status, occurredAt: row.occurredAt.toISOString(), reasonCode: row.reasonCode, ...(row.providerMessageId ? { providerMessageId: row.providerMessageId } : {}) });
 const safetyOf = (row: { organizationId: string; caseId: string; version: bigint; safetyFingerprint: string; observedAt: Date }): CommunicationExecutionSafetyState => deepFreeze({ organizationId: row.organizationId, caseId: row.caseId, version: row.version.toString(), safetyFingerprint: row.safetyFingerprint, observedAt: row.observedAt.toISOString() });
 const retryableTransactionConflict = (error: unknown) => error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2034";
 
@@ -54,10 +54,10 @@ export class PrismaCommunicationExecutionStore implements CommunicationExecution
       if (attempt.executionId !== executionId || attempt.organizationId !== outcome.organizationId || outcome.attemptId !== attemptId) throw new Error("Outcome scope mismatch");
       const prior = await transaction.communicationSendOutcome.findUnique({ where: { attemptId } });
       if (prior) {
-        if (prior.status !== outcome.status || prior.reasonCode !== outcome.reasonCode || prior.occurredAt.toISOString() !== outcome.occurredAt) throw new Error("Conflicting immutable attempt outcome");
+        if (prior.status !== outcome.status || prior.reasonCode !== outcome.reasonCode || prior.occurredAt.toISOString() !== outcome.occurredAt || (prior.providerMessageId ?? undefined) !== outcome.providerMessageId) throw new Error("Conflicting immutable attempt outcome");
         return executionOf(await transaction.communicationExecution.findUniqueOrThrow({ where: { id: executionId } }));
       }
-      await transaction.communicationSendOutcome.create({ data: { id: outcome.id, organizationId: outcome.organizationId, attemptId, status: outcome.status, occurredAt: new Date(outcome.occurredAt), reasonCode: outcome.reasonCode } });
+      await transaction.communicationSendOutcome.create({ data: { id: outcome.id, organizationId: outcome.organizationId, attemptId, status: outcome.status, occurredAt: new Date(outcome.occurredAt), reasonCode: outcome.reasonCode, providerMessageId: outcome.providerMessageId } });
       const updated = await transaction.communicationExecution.updateMany({ where: { id: executionId, organizationId: outcome.organizationId, status: "ATTEMPTING" }, data: { status: outcome.status } });
       if (updated.count !== 1) throw new Error("Execution is not awaiting an outcome");
       return executionOf(await transaction.communicationExecution.findUniqueOrThrow({ where: { id: executionId } }));
