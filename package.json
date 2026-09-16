@@ -13,6 +13,7 @@
     "db:generate": "prisma generate",
     "db:validate": "prisma validate",
     "client-zero:preflight": "node scripts/client-zero-preflight.mjs",
+    "client-zero:evaluate-local-pdfs": "tsx scripts/ingestion/evaluate-local-pdfs.ts",
     "smoke:email:controlled": "tsx scripts/communication/run-controlled-email-smoke-test.ts"
   },
   "dependencies": {
@@ -20,6 +21,7 @@
     "@prisma/client": "6.12.0",
     "exceljs": "^4.4.0",
     "next": "16.3.4",
+    "pdfjs-dist": "5.4.296",
     "pg": "8.22.0",
     "react": "19.2.4",
     "react-dom": "19.2.4",

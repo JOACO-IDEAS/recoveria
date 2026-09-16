@@ -42,9 +42,15 @@ export class ImportOrchestrator {
         const records = await parser.parse(document.id, document.bytes);
         const candidates = records.map((record, index) => buildInvoiceCandidate(document.id, index, record, catalog));
         const reviewReasons = [...new Set(candidates.flatMap(validateInvoiceCandidate))];
-        preliminary.push({ documentId: document.id, organizationId, classification, status: reviewReasons.length ? "REVIEW_REQUIRED" : "PARSED", candidates, reviewReasons });
+        preliminary.push({ documentId: document.id, organizationId, classification, status: reviewReasons.length ? "REVIEW_REQUIRED" : "PARSED", candidates, reviewReasons, ...(records[0]?.understanding ? { understanding: records[0].understanding } : {}) });
         allFindings.push(...duplicateDetector.inspect(document, candidates));
       } catch (error) {
+        if (error instanceof Error && error.message === "PDF_NATIVE_TEXT_UNAVAILABLE") {
+          const scanClassification = { format: "PDF_SCANNED" as const, evidence: [...classification.evidence, "Native decoding yielded no text; offline OCR review required"] };
+          preliminary.push(ScannedPdfAdapter.route(document, scanClassification));
+          allFindings.push(...duplicateDetector.inspect(document, []));
+          continue;
+        }
         preliminary.push({ documentId: document.id, organizationId, classification, status: "FAILED", candidates: [], reviewReasons: ["PARSER_FAILED"], errorCode: error instanceof Error ? error.message : "UNKNOWN_PARSE_ERROR" });
         allFindings.push(...duplicateDetector.inspect(document, []));
       }

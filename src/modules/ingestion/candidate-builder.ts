@@ -38,11 +38,11 @@ function entitySignal(field: ExtractedField, catalog: readonly EntityCatalogEntr
 }
 
 export function buildInvoiceCandidate(documentId: string, candidateIndex: number, record: RawInvoiceRecord, catalog: readonly EntityCatalogEntry[]): InvoiceCandidate {
-  const invoiceNumber = textField(record, "invoiceNumber", (raw) => raw.trim().toUpperCase());
+  const invoiceNumber = textField(record, "invoiceNumber", (raw) => raw.trim().toUpperCase().replace(/^N[°ºO]\s*:?\s*/i, ""));
   const invoiceDate = parsedField(record, "invoiceDate", normalizeDate);
   const dueDate = parsedField(record, "dueDate", normalizeDate);
   const amountCents = parsedField(record, "amount", parseArgentineAmount);
-  const currency = textField(record, "currency", (raw) => raw.toUpperCase());
+  const currency = textField(record, "currency", (raw) => /^(PESO|PESOS)$/i.test(raw.trim()) ? "ARS" : raw.toUpperCase());
   const issuer = textField(record, "issuer", normalizeName);
   const billedParty = textField(record, "billedParty", normalizeName);
   const cuit = parsedField(record, "cuit", normalizeCuit);

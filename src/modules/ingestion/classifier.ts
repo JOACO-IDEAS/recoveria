@@ -4,14 +4,14 @@ const decoder = new TextDecoder("latin1");
 
 export function classifyDocument(document: DocumentInput): Classification {
   const header = decoder.decode(document.bytes.slice(0, 4096));
+  const tail = decoder.decode(document.bytes.slice(Math.max(0, document.bytes.length - 4096)));
   const extension = document.fileName.toLowerCase().split(".").pop();
   if (header.startsWith("%PDF-")) {
-    if (!header.includes("%%EOF")) return { format: "MALFORMED", evidence: ["PDF signature present but EOF marker missing"] };
-    if (/\/Subtype\s*\/Image|RECOVERIA_SCAN_ONLY/.test(header) && !/\bBT\b[\s\S]*\bET\b/.test(header)) {
-      return { format: "PDF_SCANNED", evidence: ["PDF has image/scan marker and no usable native text operators"] };
+    if (!tail.includes("%%EOF")) return { format: "MALFORMED", evidence: ["PDF signature present but EOF marker missing"] };
+    if (/RECOVERIA_SCAN_ONLY/.test(header)) {
+      return { format: "PDF_SCANNED", evidence: ["Explicit synthetic scan-only marker; offline OCR routing required"] };
     }
-    if (/\bBT\b[\s\S]*\bET\b/.test(header)) return { format: "PDF_NATIVE", evidence: ["PDF signature and native text operators found"] };
-    return { format: "MALFORMED", evidence: ["PDF contains neither native text nor a supported scan marker"] };
+    return { format: "PDF_NATIVE", evidence: ["Valid PDF container; local native-text decoding required"] };
   }
   if (document.bytes[0] === 0x50 && document.bytes[1] === 0x4b && (extension === "xlsx" || document.declaredMediaType.includes("spreadsheet"))) {
     return { format: "XLSX", evidence: ["ZIP signature plus XLSX extension/media type"] };
