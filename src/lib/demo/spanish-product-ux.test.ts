@@ -43,7 +43,7 @@ describe("Phase 4.7B Spanish presentation", () => {
 
   it("keeps Spanish navigation and the demo indicator", async () => {
     const source = await readFile(path.join(process.cwd(), "src/components/app-shell.tsx"), "utf8");
-    for (const label of ["Inicio", "Cartera", "Facturas", "Casos", "Importaciones", "Datos de demostración"]) expect(source).toContain(label);
+    for (const label of ["Inicio", "Cartera", "Casos", "Documentos", "Agente", "Configuración", "Datos de demostración"]) expect(source).toContain(label);
   });
 
   it("does not render known enums through direct replacements", async () => {

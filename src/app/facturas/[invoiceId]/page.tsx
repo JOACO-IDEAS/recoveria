@@ -2,7 +2,9 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { PageHeader } from "@/components/app-shell";
 import { date, money } from "@/components/ui";
+import { DocumentViewer } from "@/components/document-viewer";
 import { attentionLabel, evidenceLabel, invoiceStatusLabel, ledgerLabel } from "@/lib/demo/presentation";
+import { buildDocumentExtraction } from "@/lib/demo/document-extraction";
 import { demoModel as m } from "@/lib/demo/product-model";
 
 export default async function InvoiceDetail({ params }: { params: Promise<{ invoiceId: string }> }) {
@@ -10,10 +12,15 @@ export default async function InvoiceDetail({ params }: { params: Promise<{ invo
   const invoice = m.invoices.find((item) => item.id === invoiceId);
   if (!invoice) notFound();
   const entries = m.cases.filter((item) => item.source.invoiceIds.includes(invoice.id));
+  const extraction = buildDocumentExtraction(invoice);
 
   return <main className="page editorial">
-    <PageHeader eyebrow="FACTURA" title={invoice.invoiceNumber} description={`${invoice.entityName} · ${invoice.buildingName}`} />
-    <div className="financial-summary"><div><span>SALDO PENDIENTE</span><strong>{money(invoice.outstandingCents)}</strong><small>de {money(invoice.totalCents)} originales</small></div><dl><div><dt>Vencimiento</dt><dd>{date(invoice.dueAt)}</dd></div><div><dt>Estado</dt><dd><span className={`process-state ${invoice.status.toLowerCase()}`}>{invoiceStatusLabel(invoice.status)}</span></dd></div></dl></div>
+    <PageHeader eyebrow="DOCUMENTO" title={invoice.invoiceNumber} description={`${invoice.entityName} · ${invoice.buildingName}`} />
+    <section className="section">
+      <div className="section-title"><div><span>EXTRACCIÓN</span><h2>Qué encontró RecoverIA en este documento</h2><p>Cada campo distingue si es un hecho extraído, una inferencia que requiere revisión o algo que el documento no permite determinar.</p></div></div>
+      <DocumentViewer extraction={extraction} invoiceNumber={invoice.invoiceNumber} />
+    </section>
+    <div className="financial-summary"><div><span>SALDO RECONSTRUIDO POR RECOVERIA</span><strong>{money(invoice.outstandingCents)}</strong><small>de {money(invoice.totalCents)} originales</small></div><dl><div><dt>Vencimiento (ledger)</dt><dd>{date(invoice.dueAt)}</dd></div><div><dt>Estado</dt><dd><span className={`process-state ${invoice.status.toLowerCase()}`}>{invoiceStatusLabel(invoice.status)}</span></dd></div></dl></div>
     <div className="detail-grid">
       <section className="section"><div className="section-title"><div><span>ASOCIACIÓN</span><h2>Por qué aparece aquí</h2></div></div>
         <p><strong>Administración:</strong> {invoice.administrationId?<Link className="link" href={`/cartera/${invoice.administrationId}`}>{invoice.entityName}</Link>:invoice.entityName}</p><p><strong>Consorcio:</strong> {invoice.buildingName}</p>

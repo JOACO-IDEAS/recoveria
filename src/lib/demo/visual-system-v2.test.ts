@@ -12,18 +12,20 @@ describe("Visual System V2 presentation contract", () => {
     expect(css).toContain("font-variant-numeric:tabular-nums");
   });
 
-  it("retires the equal KPI grid on Inicio", async () => {
+  it("retires the equal KPI grid on Inicio and leads with attention, not metrics", async () => {
     const home = await readFile("src/app/page.tsx", "utf8");
-    expect(home).toContain("financial-hero");
-    expect(home).toContain("supporting-metrics");
+    expect(home).toContain("inbox-question");
+    expect(home).toContain("Requiere atención");
+    expect(home).toContain("inbox-metrics");
     expect(home).not.toContain("home-kpis");
     expect(home).not.toContain("<Kpi");
+    expect(home.indexOf("Requiere atención")).toBeLessThan(home.indexOf("inbox-metrics"));
   });
 
-  it("keeps provenance nested and reserves the human-decision zone", async () => {
+  it("keeps provenance nested and implements the human-decision zone", async () => {
     const casePage = await readFile("src/app/casos/[caseId]/page.tsx", "utf8");
     const invoicePage = await readFile("src/app/facturas/[invoiceId]/page.tsx", "utf8");
-    expect(casePage).toContain("decision-reserve");
+    expect(casePage).toContain("CaseDecisionPanel");
     expect(casePage).toContain("raw-provenance");
     expect(invoicePage).toContain("raw-provenance");
   });
