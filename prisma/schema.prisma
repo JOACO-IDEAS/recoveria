@@ -171,6 +171,24 @@ enum DuplicateKind {
   POSSIBLE_BUSINESS_DUPLICATE
 }
 
+enum CommunicationExecutionStatus {
+  READY
+  ATTEMPTING
+  ACCEPTED
+  FAILED
+  UNKNOWN
+}
+
+enum CommunicationAttemptState {
+  ATTEMPTING
+}
+
+enum CommunicationOutcomeStatus {
+  ACCEPTED
+  FAILED
+  UNKNOWN
+}
+
 model Organization {
   id                  String                     @id @default(cuid())
   name                String
@@ -201,6 +219,9 @@ model Organization {
   importSummaries     ImportBatchSummary[]
   invoiceCandidates   InvoiceImportCandidate[]
   duplicateFindings   DuplicateFinding[]
+  communicationExecutions CommunicationExecution[]
+  communicationAttempts   CommunicationSendAttempt[]
+  communicationOutcomes   CommunicationSendOutcome[]
 }
 
 model Membership {
@@ -593,8 +614,77 @@ model CollectionCase {
   promises        PromiseToPay[]
   reviewTasks     ReviewTask[]
   legalFlags      LegalReviewFlag[]
+  communicationExecutions CommunicationExecution[]
 
+  @@unique([organizationId, id])
   @@index([organizationId, status, currency])
+}
+
+model CommunicationExecution {
+  id                     String                       @id
+  organizationId         String
+  caseId                 String
+  draftId                String
+  draftContentHash       String
+  approvalId             String
+  approvalActorId        String
+  contactId              String
+  channelId              String
+  intent                 String
+  status                 CommunicationExecutionStatus @default(READY)
+  currentFingerprint     String
+  idempotencyKey         String
+  providerRequestKey     String
+  invoiceIds             String[]
+  targetOutstandingCents BigInt
+  evidenceRefs           String[]
+  revalidatedAt          DateTime
+  claimedAt              DateTime?
+  createdAt              DateTime                     @default(now())
+  updatedAt              DateTime                     @updatedAt
+  organization           Organization                 @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  case                   CollectionCase               @relation(fields: [organizationId, caseId], references: [organizationId, id], onDelete: Restrict)
+  attempts               CommunicationSendAttempt[]
+
+  @@unique([organizationId, draftId])
+  @@unique([organizationId, id])
+  @@unique([organizationId, idempotencyKey])
+  @@unique([organizationId, providerRequestKey])
+  @@index([organizationId, status, updatedAt])
+}
+
+model CommunicationSendAttempt {
+  id                   String                    @id
+  organizationId       String
+  executionId          String
+  attemptNumber        Int
+  state                CommunicationAttemptState @default(ATTEMPTING)
+  providerId           String?
+  providerRequestKey   String
+  startedAt            DateTime
+  fingerprintAtAttempt String
+  evidenceRefs         String[]
+  organization         Organization              @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  execution            CommunicationExecution    @relation(fields: [organizationId, executionId], references: [organizationId, id], onDelete: Restrict)
+  outcome              CommunicationSendOutcome?
+
+  @@unique([executionId, attemptNumber])
+  @@unique([organizationId, id])
+  @@index([organizationId, executionId, startedAt])
+}
+
+model CommunicationSendOutcome {
+  id             String                     @id
+  organizationId String
+  attemptId      String                     @unique
+  status         CommunicationOutcomeStatus
+  occurredAt     DateTime
+  reasonCode     String
+  organization   Organization               @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  attempt        CommunicationSendAttempt   @relation(fields: [organizationId, attemptId], references: [organizationId, id], onDelete: Restrict)
+
+  @@unique([organizationId, attemptId])
+  @@index([organizationId, status, occurredAt])
 }
 
 model CollectionCaseReceivable {
