@@ -2,7 +2,9 @@ import { createHash } from "node:crypto";
 import { readdir, readFile, realpath, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { DeterministicDocumentUnderstandingProvider } from "../../src/modules/ingestion/document-understanding-provider";
+import { proposeDocumentRelationships, type CohortDocument } from "../../src/modules/ingestion/document-relationships";
 import type { StructuredDocumentUnderstanding } from "../../src/modules/ingestion/types";
+import { proposeCustomerIdentityClusters, type CustomerIdentitySignal } from "../../src/modules/entity-resolution/cohort-clustering";
 
 const repositoryRoot = path.resolve(process.cwd());
 const privateRoot = path.join(repositoryRoot, ".private", "client-zero");
@@ -74,8 +76,41 @@ async function main(): Promise<void> {
     servicePeriod: count("servicePeriod"), installmentOrStage: count("installmentOrStage"), provenance: count("provenance"),
   },
   };
-  await writeFile(outputPath, `${JSON.stringify({ summary, evaluations }, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
-  process.stdout.write(`${JSON.stringify(summary)}\n`);
+
+  // Phase 4.6B.1 — cohort-level identity clustering and document relationship
+  // intelligence, run only in-memory against this private evaluation. All
+  // proposals stay reviewable; nothing here merges documents or promotes a
+  // cluster into an entity.
+  const cohortDocuments: CohortDocument[] = result.results.flatMap((item) => item.understanding ? [{ documentId: item.documentId, understanding: item.understanding }] : []);
+  const relationshipReport = proposeDocumentRelationships(cohortDocuments);
+  const identitySignals: CustomerIdentitySignal[] = cohortDocuments.map(({ documentId, understanding }) => ({
+    sourceRef: documentId,
+    taxId: understanding.customerTaxId.normalized,
+    normalizedName: understanding.customerName.normalized,
+    normalizedAddress: understanding.customerAddress.normalized,
+    evidence: understanding.customerTaxId.raw ? [{ documentId, location: { kind: "PDF_TEXT" as const }, rawValue: understanding.customerTaxId.raw }] : [],
+  }));
+  const identityClusters = proposeCustomerIdentityClusters(identitySignals);
+  const relationshipSummary = {
+    proposalsTotal: relationshipReport.proposals.length,
+    byKind: Object.fromEntries([...new Set(relationshipReport.proposals.map((p) => p.kind))].map((kind) => [kind, relationshipReport.proposals.filter((p) => p.kind === kind).length])),
+    highConfidence: relationshipReport.proposals.filter((p) => p.confidence === "HIGH").length,
+    mediumConfidence: relationshipReport.proposals.filter((p) => p.confidence === "MEDIUM").length,
+    ambiguous: relationshipReport.proposals.filter((p) => p.status === "AMBIGUOUS").length,
+    contradictions: relationshipReport.proposals.filter((p) => p.status === "CONTRADICTED").length,
+    reviewRequired: relationshipReport.proposals.filter((p) => p.reviewRequired).length,
+    unmatchedSignals: relationshipReport.unmatchedSignals.length,
+  };
+  const identitySummary = {
+    clustersProposed: identityClusters.length,
+    byStatus: Object.fromEntries((["PROPOSED", "AMBIGUOUS", "CONTRADICTED", "UNKNOWN"] as const).map((status) => [status, identityClusters.filter((c) => c.status === status).length])),
+    byConfidence: Object.fromEntries((["HIGH", "MEDIUM", "LOW"] as const).map((confidence) => [confidence, identityClusters.filter((c) => c.confidence === confidence).length])),
+    reviewRequired: identityClusters.filter((c) => c.reviewRequired).length,
+  };
+  const extendedSummary = { ...summary, relationships: relationshipSummary, identityClusters: identitySummary };
+
+  await writeFile(outputPath, `${JSON.stringify({ summary: extendedSummary, evaluations, relationshipReport, identityClusters }, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
+  process.stdout.write(`${JSON.stringify(extendedSummary)}\n`);
 }
 
 void main();

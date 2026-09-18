@@ -148,3 +148,46 @@ export interface ImportBatchResult {
   readonly results: readonly DocumentParseResult[];
   readonly duplicateFindings: readonly DuplicateFinding[];
 }
+
+// Phase 4.6B.1 — cohort-level document relationship intelligence.
+// A proposal is never truth: it is evidence-backed, reviewable, and must
+// never silently merge or dedupe documents. Kinds are prefixed "POSSIBLE_"
+// consistently with the existing per-document RelationshipCandidate.kind
+// vocabulary, since none of these may ever imply certainty.
+export type ProposalStatus = "PROPOSED" | "AMBIGUOUS" | "CONTRADICTED" | "UNKNOWN";
+export type DocumentRelationshipKind =
+  | "POSSIBLE_SAME_CUSTOMER"
+  | "POSSIBLE_SAME_SERIES"
+  | "POSSIBLE_RECURRING_SERVICE"
+  | "POSSIBLE_INSTALLMENT_OF"
+  | "POSSIBLE_ADVANCE_FOR"
+  | "POSSIBLE_BALANCE_FOR"
+  | "POSSIBLE_PROJECT_GROUP"
+  | "POSSIBLE_COUNTERPART";
+
+export interface DocumentRelationshipProposal {
+  readonly kind: DocumentRelationshipKind;
+  readonly status: ProposalStatus;
+  readonly confidence: ExtractionConfidence;
+  readonly classification: EvidenceClassification;
+  readonly documentIds: readonly [string, string];
+  readonly supportingSignals: readonly string[];
+  readonly contradictingSignals: readonly string[];
+  readonly reviewRequired: boolean;
+  readonly evidence: readonly SourceEvidence[];
+}
+
+// A relationship signal (e.g. "CUOTA 1 DE 3") observed on one document with
+// no matching counterpart found anywhere in the cohort. This must never be
+// silently completed or assumed — it stays an explicit, reviewable gap.
+export interface UnmatchedRelationshipSignal {
+  readonly documentId: string;
+  readonly signalKind: DocumentRelationshipKind;
+  readonly reason: string;
+  readonly evidence: readonly SourceEvidence[];
+}
+
+export interface DocumentRelationshipReport {
+  readonly proposals: readonly DocumentRelationshipProposal[];
+  readonly unmatchedSignals: readonly UnmatchedRelationshipSignal[];
+}
