@@ -31,7 +31,7 @@ export default async function CaseDetail({ params }: { params: Promise<{ caseId:
     {c.dispute.value && <div className="pause-banner"><strong>Seguimiento pausado</strong><span>El seguimiento automático está detenido hasta revisión humana porque una factura de este caso está en disputa.</span></div>}
 
     {claim && <div className="state-card payment-claim">
-      <h4>Pago informado — awaiting verification</h4>
+      <h4>Pago informado — pendiente de verificación</h4>
       <p>{claim.note} No es un pago confirmado hasta que exista una imputación contra la evidencia bancaria.</p>
     </div>}
 

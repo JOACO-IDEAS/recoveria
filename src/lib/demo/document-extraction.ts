@@ -46,7 +46,7 @@ export function buildDocumentExtraction(invoice: InvoiceRow): DocumentExtraction
     { label: "Fecha de emisión", value: new Intl.DateTimeFormat("es-AR", { dateStyle: "medium", timeZone: "UTC" }).format(new Date(invoice.issuedAt)), confidence: "FACT", highlightId: "issued" },
     { label: "CUIT del cliente", value: syntheticCuit(invoice.administrationId), confidence: "FACT", note: "Identificador sintético de demostración.", highlightId: "cuit" },
     { label: "Moneda", value: invoice.currency, confidence: "FACT", highlightId: "currency" },
-    { label: "Importe nominal", value: invoice.totalCents.toString(), confidence: "FACT", note: "El importe nominal no es el saldo actual.", highlightId: "total" },
+    { label: "Importe nominal", value: new Intl.NumberFormat("es-AR", { style: "currency", currency: invoice.currency, maximumFractionDigits: 0 }).format(invoice.totalCents / 100), confidence: "FACT", note: "El importe nominal no es el saldo actual.", highlightId: "total" },
     DUE_DATE_UNKNOWN.has(invoice.id)
       ? { label: "Vencimiento de pago", value: "No encontrado en el documento", confidence: "UNKNOWN", highlightId: "due" }
       : { label: "Vencimiento de pago", value: new Intl.DateTimeFormat("es-AR", { dateStyle: "medium", timeZone: "UTC" }).format(new Date(invoice.dueAt)), confidence: "FACT", highlightId: "due" },

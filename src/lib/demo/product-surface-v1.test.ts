@@ -22,6 +22,20 @@ describe("Phase 4.7 product surface v1 — semantic invariants", () => {
     for (const claim of PAYMENT_CLAIMS) expect(claim.status).toBe("AWAITING_VERIFICATION");
   });
 
+  it("presents the payment-claim state entirely in Spanish", async () => {
+    const source = await readFile(path.join(process.cwd(), "src/app/casos/[caseId]/page.tsx"), "utf8");
+    expect(source).toContain("Pago informado — pendiente de verificación");
+    expect(source).not.toContain("awaiting verification");
+  });
+
+  it("formats the nominal document total as a business-facing currency value", () => {
+    const invoice = m.invoices.find((item) => item.id === "i15");
+    expect(invoice).toBeDefined();
+    const total = buildDocumentExtraction(invoice!).fields.find((field) => field.highlightId === "total");
+    expect(total?.value).toMatch(/\$\s*180\.000/);
+    expect(total?.value).not.toBe(invoice!.totalCents.toString());
+  });
+
   it("never offers a one-click confirmation that a payment claim is real money received", async () => {
     const source = await readFile(path.join(process.cwd(), "src/components/case-decision-panel.tsx"), "utf8");
     expect(source).not.toMatch(/marcar como pagad/i);
