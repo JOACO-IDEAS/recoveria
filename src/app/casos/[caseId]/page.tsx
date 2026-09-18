@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { PageHeader } from "@/components/app-shell";
 import { money, Priority } from "@/components/ui";
 import { CaseDecisionPanel } from "@/components/case-decision-panel";
+import { EvidenceReference } from "@/components/evidence-inspector";
 import { attentionLabel, evidenceLabel, eventLabel, promiseLabel } from "@/lib/demo/presentation";
 import { buildCommunicationPreview, decisionOptionsForCase, knowledgeGapsForCase, paymentClaimForCase } from "@/lib/demo/case-workspace";
 import { demoModel as m } from "@/lib/demo/product-model";
@@ -66,7 +67,7 @@ export default async function CaseDetail({ params }: { params: Promise<{ caseId:
       <div className="stack">
         <section className="section">
           <div className="section-title"><div><span>FACTURAS</span><h2>Facturas involucradas</h2></div></div>
-          {invoices.map((i) => <div className="list-row" key={i.id}><Link className="link" href={`/facturas/${i.id}`}>{i.invoiceNumber}</Link><strong>{money(i.outstandingCents)}</strong></div>)}
+          {invoices.map((i) => <div className="list-row" key={i.id}><EvidenceReference invoiceId={i.id}>{i.invoiceNumber}</EvidenceReference><strong>{money(i.outstandingCents)}</strong></div>)}
         </section>
         <section className="section evidence-panel">
           <details className="disclosure"><summary>Ver evidencia de la recomendación</summary><p>La recomendación se apoya en saldo, vencimiento y señales del caso.</p><details className="raw-provenance"><summary>Ver procedencia original</summary>{c.recommendation.evidenceReferences.map((ref) => <p key={ref}>{evidenceLabel(ref)}</p>)}</details></details>

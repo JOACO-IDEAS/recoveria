@@ -15,12 +15,14 @@ export interface AgentTurn {
   readonly text: string;
   readonly kind?: "text" | "portfolio" | "case-reason" | "payment" | "avoid-list" | "drafts";
   readonly caseIds?: readonly string[];
+  readonly invoiceIds?: readonly string[];
 }
 
 export interface AgentAnswer {
   readonly text: string;
   readonly kind: NonNullable<AgentTurn["kind"]>;
   readonly caseIds?: readonly string[];
+  readonly invoiceIds?: readonly string[];
 }
 
 const norm = (value: string) => value.toLocaleLowerCase("es-AR").normalize("NFD").replace(/[̀-ͯ]/g, "");
@@ -51,6 +53,7 @@ function answerPayment(): AgentAnswer {
     text: `Sobre el pago informado en ${c?.entityName ?? "este caso"}:\n- HECHO: el contacto informó una transferencia de ${money(claim.amountCents)} por ${claim.channel} el ${new Intl.DateTimeFormat("es-AR", { dateStyle: "medium", timeZone: "UTC" }).format(new Date(claim.reportedAt))}.\n- DESCONOCIDO: todavía no existe una imputación bancaria confirmada contra las facturas abiertas.\n- Próxima revisión recomendada: validar contra la evidencia antes de continuar el seguimiento.`,
     kind: "payment",
     caseIds: [claim.caseId],
+    invoiceIds: claim.invoiceIds,
   };
 }
 

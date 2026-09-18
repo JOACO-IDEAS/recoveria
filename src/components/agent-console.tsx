@@ -3,6 +3,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { answerAgentQuestion, suggestedQuestions, type AgentTurn } from "@/lib/demo/agent";
 import { demoModel as m } from "@/lib/demo/product-model";
+import { EvidenceReference } from "@/components/evidence-inspector";
 
 // Phase 4.7 — Agente RecoverIA. Deterministic, local, multi-turn question
 // answering over the existing demo model. No external AI API call is made;
@@ -20,7 +21,7 @@ export function AgentConsole() {
   const ask = (question: string) => {
     if (!question.trim()) return;
     const answer = answerAgentQuestion(question);
-    setTurns((prev) => [...prev, { id: nextId(), role: "user", text: question }, { id: nextId(), role: "agent", text: answer.text, kind: answer.kind, caseIds: answer.caseIds }]);
+    setTurns((prev) => [...prev, { id: nextId(), role: "user", text: question }, { id: nextId(), role: "agent", text: answer.text, kind: answer.kind, caseIds: answer.caseIds, invoiceIds: answer.invoiceIds }]);
     setPending("");
   };
 
@@ -34,6 +35,7 @@ export function AgentConsole() {
         {turns.map((turn) => <div key={turn.id} className={`agent-turn ${turn.role}`}>
           {turn.text}
           {turn.caseIds && turn.caseIds.length > 0 && <div className="agent-case-chips">{turn.caseIds.slice(0, 6).map((id) => <Link key={id} href={`/casos/${id}`}>{m.cases.find((c) => c.id === id)?.entityName ?? id}</Link>)}</div>}
+          {turn.invoiceIds && turn.invoiceIds.length > 0 && <div className="agent-evidence-references">{turn.invoiceIds.map((id) => <EvidenceReference invoiceId={id} key={id}>{m.invoices.find((invoice) => invoice.id === id)?.invoiceNumber ?? id}</EvidenceReference>)}</div>}
         </div>)}
       </div>
       <form className="agent-input" onSubmit={(e) => { e.preventDefault(); ask(pending); }}>
