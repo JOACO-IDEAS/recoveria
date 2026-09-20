@@ -4,7 +4,7 @@ import type { EntityCatalogEntry } from "./candidate-builder";
 import { classifyCorpusDocument } from "./corpus-classification";
 import type { CorpusDocumentResult, CorpusSourceRecord, CorpusSummary } from "./corpus-processor";
 import { DuplicateDetector } from "./duplicate-detector";
-import type { DocumentSource } from "./document-source";
+import { assertCursorBoundary, isIncrementalDocumentSource, type DocumentSource, type SourceCursor } from "./document-source";
 import type { DocumentUnderstandingProvider } from "./document-understanding-provider";
 import { proposeDocumentRelationships, type CohortDocument } from "./document-relationships";
 import { buildRelationshipCandidatePlan, type RelationshipCandidatePlan } from "./relationship-blocking";
@@ -39,10 +39,12 @@ export interface SourceCheckpointEntry {
 }
 
 export interface SourceCheckpoint {
+  readonly schemaVersion: 1;
   readonly organizationId: string;
   readonly sourceType: DocumentSource["sourceType"];
   readonly sourceId: string;
   readonly revision: string;
+  readonly cursor?: SourceCursor;
   readonly entries: readonly SourceCheckpointEntry[];
 }
 
@@ -103,12 +105,14 @@ export class IncrementalCorpusProcessor {
 
   async process(source: DocumentSource, previous?: SourceCheckpoint, entityCatalog: readonly EntityCatalogEntry[] = []): Promise<IncrementalCorpusRun> {
     if (previous && (previous.organizationId !== source.organizationId || previous.sourceId !== source.sourceId || previous.sourceType !== source.sourceType)) throw new Error("CHECKPOINT_SOURCE_BOUNDARY_MISMATCH");
+    if (previous?.cursor) assertCursorBoundary(source, previous.cursor);
     let discovered;
     try { discovered = await source.discover(); }
     catch {
       const failure: CorpusProcessingFailure = { kind: "DISCOVERY_FAILURE", retryable: true, code: "SOURCE_DISCOVERY_FAILED" };
       return this.#discoveryFailure(source, previous, failure);
     }
+    const nextCursor = await this.#resolveAdvisoryCursor(source, previous?.cursor);
     const failures: CorpusProcessingFailure[] = [];
     const loaded: Array<{ document: (typeof discovered)[number]; bytes: Uint8Array; fingerprint: string }> = [];
     for (const document of discovered) {
@@ -166,8 +170,21 @@ export class IncrementalCorpusProcessor {
     const relationshipPlan = buildRelationshipCandidatePlan(cohort); const relationships = proposeDocumentRelationships(cohort, relationshipPlan.pairs);
     const signals: CustomerIdentitySignal[] = cohort.map(({ documentId, understanding }) => ({ sourceRef: documentId, taxId: understanding.customerTaxId.normalized, normalizedName: understanding.customerName.normalized, normalizedAddress: understanding.customerAddress.normalized, evidence: understanding.customerTaxId.raw ? [{ documentId, location: { kind: "PDF_TEXT", page: 1 }, rawValue: understanding.customerTaxId.raw }] : [] }));
     const identityClusters = proposeCustomerIdentityClusters(signals); const summary = summarize(documents, duplicateFindings, identityClusters, relationships);
-    const checkpoint: SourceCheckpoint = { organizationId: source.organizationId, sourceType: source.sourceType, sourceId: source.sourceId, revision: corpusFingerprint, entries: checkpointEntries };
+    const checkpoint: SourceCheckpoint = { schemaVersion: 1, organizationId: source.organizationId, sourceType: source.sourceType, sourceId: source.sourceId, revision: corpusFingerprint, cursor: nextCursor, entries: checkpointEntries };
     return { report: { organizationId: source.organizationId, sourceType: source.sourceType, sourceId: source.sourceId, corpusFingerprint, documents, identityClusters, relationships, relationshipPlan, changes, failures, partialSuccess: failures.length > 0 && documents.length > 0, summary, metrics: { documentsDiscovered: discovered.length, documentsUnderstood: toUnderstand.length, documentsReused: reused.size, documentsFailed: failures.length, candidatePairsBeforeBlocking: relationshipPlan.pairsBeforeBlocking, candidatePairsAfterBlocking: relationshipPlan.pairsAfterBlocking, candidateReductionRatio: relationshipPlan.reductionRatio, fallbackAbstentions: relationshipPlan.fallbackAbstentions } }, checkpoint };
+  }
+
+  async #resolveAdvisoryCursor(source: DocumentSource, previousCursor?: SourceCursor): Promise<SourceCursor | undefined> {
+    if (!isIncrementalDocumentSource(source)) return undefined;
+    if (previousCursor) {
+      try {
+        const changes = await source.discoverChanges(previousCursor);
+        // Change sets remain advisory; authoritative discovery already succeeded.
+        if (changes.status === "VALID" && changes.nextCursor) { assertCursorBoundary(source, changes.nextCursor); return changes.nextCursor; }
+      } catch { /* Fall through to a fresh cursor. */ }
+    }
+    try { const cursor = await source.currentCursor(); assertCursorBoundary(source, cursor); return cursor; }
+    catch { return undefined; }
   }
 
   #discoveryFailure(source: DocumentSource, previous: SourceCheckpoint | undefined, failure: CorpusProcessingFailure): IncrementalCorpusRun {
@@ -176,7 +193,7 @@ export class IncrementalCorpusProcessor {
     const plan = buildRelationshipCandidatePlan(cohort); const relationships = proposeDocumentRelationships(cohort, plan.pairs);
     const signals: CustomerIdentitySignal[] = cohort.map(({ documentId, understanding }) => ({ sourceRef: documentId, taxId: understanding.customerTaxId.normalized, normalizedName: understanding.customerName.normalized, normalizedAddress: understanding.customerAddress.normalized, evidence: understanding.customerTaxId.raw ? [{ documentId, location: { kind: "PDF_TEXT", page: 1 }, rawValue: understanding.customerTaxId.raw }] : [] }));
     const identityClusters = proposeCustomerIdentityClusters(signals); const summary = summarize(documents, [], identityClusters, relationships);
-    const checkpoint = previous ?? { organizationId: source.organizationId, sourceType: source.sourceType, sourceId: source.sourceId, revision: "unobserved", entries: [] };
+    const checkpoint = previous ?? { schemaVersion: 1 as const, organizationId: source.organizationId, sourceType: source.sourceType, sourceId: source.sourceId, revision: "unobserved", entries: [] };
     return { report: { organizationId: source.organizationId, sourceType: source.sourceType, sourceId: source.sourceId, corpusFingerprint: checkpoint.revision, documents, identityClusters, relationships, relationshipPlan: plan, changes: [], failures: [failure], partialSuccess: documents.length > 0, summary, metrics: { documentsDiscovered: 0, documentsUnderstood: 0, documentsReused: documents.length, documentsFailed: 1, candidatePairsBeforeBlocking: plan.pairsBeforeBlocking, candidatePairsAfterBlocking: plan.pairsAfterBlocking, candidateReductionRatio: plan.reductionRatio, fallbackAbstentions: plan.fallbackAbstentions } }, checkpoint };
   }
 }
