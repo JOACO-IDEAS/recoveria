@@ -15,6 +15,7 @@
     "client-zero:preflight": "node scripts/client-zero-preflight.mjs",
     "client-zero:evaluate-local-pdfs": "tsx scripts/ingestion/evaluate-local-pdfs.ts",
     "client-zero:evaluate-local-corpus": "tsx scripts/ingestion/evaluate-local-corpus.ts",
+    "pilot:google-drive": "tsx scripts/ingestion/run-google-drive-pilot.ts",
     "smoke:email:controlled": "tsx scripts/communication/run-controlled-email-smoke-test.ts"
   },
   "dependencies": {
