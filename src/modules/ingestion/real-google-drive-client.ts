@@ -7,7 +7,7 @@ export type GoogleDriveOperation = "FILES_LIST" | "FILES_GET" | "FILES_DOWNLOAD"
 export const READ_ONLY_GOOGLE_DRIVE_OPERATIONS: readonly GoogleDriveOperation[] = ["FILES_LIST", "FILES_GET", "FILES_DOWNLOAD", "CHANGES_START_TOKEN", "CHANGES_LIST"];
 export interface GoogleDriveTransportRequest { readonly operation: GoogleDriveOperation; readonly accessToken: string; readonly parameters: Readonly<Record<string, string | number | boolean | undefined>>; readonly maximumResponseBytes?: number }
 export interface GoogleDriveTransport { execute<T>(request: GoogleDriveTransportRequest): Promise<T> }
-export class GoogleDriveTransportError extends Error { constructor(readonly status?: number, readonly reasons: readonly string[] = [], readonly network?: "TIMEOUT" | "INTERRUPTED") { super("GOOGLE_DRIVE_TRANSPORT_FAILURE"); } }
+export class GoogleDriveTransportError extends Error { constructor(readonly status?: number, readonly reasons: readonly string[] = [], readonly network?: "TIMEOUT" | "INTERRUPTED", readonly retryAfterMs?: number) { super("GOOGLE_DRIVE_TRANSPORT_FAILURE"); } }
 
 interface GoogleFile { readonly id?: string; readonly name?: string; readonly mimeType?: string; readonly size?: string; readonly modifiedTime?: string; readonly parents?: readonly string[]; readonly trashed?: boolean; readonly driveId?: string; readonly shortcutDetails?: { readonly targetId?: string } }
 interface GoogleFileList { readonly files?: readonly GoogleFile[]; readonly nextPageToken?: string }
