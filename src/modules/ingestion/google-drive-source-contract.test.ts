@@ -30,8 +30,8 @@ class FakeDriveSource implements GoogleDriveSourceContract {
     return { files, nextPageToken: start + this.pageSize < ordered.length ? String(start + this.pageSize) : undefined };
   }
   async readFileContent(fileId: string): Promise<Uint8Array> {
-    const remaining = this.fetchFailures.get(fileId) ?? 0; if (remaining > 0) { this.fetchFailures.set(fileId, remaining - 1); throw new DriveSourceFetchError("DRIVE_TEMPORARY_FETCH_FAILURE", true); }
-    const record = this.records.find((item) => item.fileId === fileId); if (!record) throw new DriveSourceFetchError("DRIVE_FILE_NOT_FOUND", false); return record.bytes;
+    const remaining = this.fetchFailures.get(fileId) ?? 0; if (remaining > 0) { this.fetchFailures.set(fileId, remaining - 1); throw new DriveSourceFetchError("DRIVE_TEMPORARY_FETCH_FAILURE", "RETRYABLE"); }
+    const record = this.records.find((item) => item.fileId === fileId); if (!record) throw new DriveSourceFetchError("DRIVE_FILE_NOT_FOUND", "TERMINAL"); return record.bytes;
   }
   toDiscoveredDocument(file: DriveFileDescriptor): DiscoveredDocument {
     return { sourceDocumentId: file.fileId, displayName: file.displayName, mimeType: file.mimeType, size: file.size, modifiedAt: file.modifiedAt, supported: file.mimeType === "application/pdf", provenance: { sourceType: this.sourceType, sourceId: this.sourceId, sourceDocumentId: file.fileId, locator: file.locator }, readContent: () => this.readFileContent(file.fileId) };

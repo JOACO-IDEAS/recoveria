@@ -78,6 +78,10 @@ export interface IncrementalCorpusReport {
 export interface IncrementalCorpusRun { readonly report: IncrementalCorpusReport; readonly checkpoint: SourceCheckpoint }
 
 const outcomeFor = (parse: DocumentParseResult): ProcessingOutcome => parse.status === "PARSED" ? "SUCCEEDED" : parse.status === "REVIEW_REQUIRED" ? "REVIEW_REQUIRED" : parse.status === "UNSUPPORTED" ? "UNSUPPORTED" : parse.errorCode === "MALFORMED_DOCUMENT" ? "FAILED_TERMINAL" : "FAILED_RETRYABLE";
+const sourceError = (error: unknown, fallbackCode: string): { retryable: boolean; code: string } => {
+  const candidate = error as { readonly retryable?: unknown; readonly code?: unknown };
+  return { retryable: typeof candidate?.retryable === "boolean" ? candidate.retryable : true, code: typeof candidate?.code === "string" ? candidate.code : fallbackCode };
+};
 
 const allObservedCandidates = (u: StructuredDocumentUnderstanding): readonly ObservedCandidate<unknown>[] => [u.documentType, u.pointOfSale, u.invoiceNumber, ...u.dates, u.fiscalAuthorizationId, u.issuerTaxId, u.customerTaxId, u.issuerName, u.customerName, u.issuerAddress, u.customerAddress, u.currency, u.subtotalCents, ...u.taxComponents, u.documentedNominalTotalCents, u.description, u.servicePeriodStart, u.servicePeriodEnd, u.quotationReference, u.installmentStage];
 const coreComplete = (u?: StructuredDocumentUnderstanding): boolean => Boolean(u && u.invoiceNumber.normalized && u.dates.some((candidate) => candidate.semantic === "ISSUE_DATE" && candidate.normalized) && u.customerTaxId.normalized && u.currency.normalized && u.documentedNominalTotalCents.normalized !== null);
@@ -108,8 +112,9 @@ export class IncrementalCorpusProcessor {
     if (previous?.cursor) assertCursorBoundary(source, previous.cursor);
     let discovered;
     try { discovered = await source.discover(); }
-    catch {
-      const failure: CorpusProcessingFailure = { kind: "DISCOVERY_FAILURE", retryable: true, code: "SOURCE_DISCOVERY_FAILED" };
+    catch (error) {
+      const classified = sourceError(error, "SOURCE_DISCOVERY_FAILED");
+      const failure: CorpusProcessingFailure = { kind: "DISCOVERY_FAILURE", ...classified };
       return this.#discoveryFailure(source, previous, failure);
     }
     const nextCursor = await this.#resolveAdvisoryCursor(source, previous?.cursor);
@@ -117,7 +122,7 @@ export class IncrementalCorpusProcessor {
     const loaded: Array<{ document: (typeof discovered)[number]; bytes: Uint8Array; fingerprint: string }> = [];
     for (const document of discovered) {
       try { const bytes = await document.readContent(); loaded.push({ document, bytes, fingerprint: createHash("sha256").update(bytes).digest("hex") }); }
-      catch { failures.push({ kind: "CONTENT_FETCH_FAILURE", sourceDocumentId: document.sourceDocumentId, retryable: true, code: "SOURCE_CONTENT_FETCH_FAILED" }); }
+      catch (error) { failures.push({ kind: "CONTENT_FETCH_FAILURE", sourceDocumentId: document.sourceDocumentId, ...sourceError(error, "SOURCE_CONTENT_FETCH_FAILED") }); }
     }
     const corpusFingerprint = createHash("sha256").update(loaded.map(({ document, fingerprint }) => `${document.sourceDocumentId}:${fingerprint}`).sort().join("\n")).digest("hex");
     const priorById = new Map(previous?.entries.map((entry) => [entry.source.sourceDocumentId, entry]) ?? []);
@@ -170,7 +175,7 @@ export class IncrementalCorpusProcessor {
     const relationshipPlan = buildRelationshipCandidatePlan(cohort); const relationships = proposeDocumentRelationships(cohort, relationshipPlan.pairs);
     const signals: CustomerIdentitySignal[] = cohort.map(({ documentId, understanding }) => ({ sourceRef: documentId, taxId: understanding.customerTaxId.normalized, normalizedName: understanding.customerName.normalized, normalizedAddress: understanding.customerAddress.normalized, evidence: understanding.customerTaxId.raw ? [{ documentId, location: { kind: "PDF_TEXT", page: 1 }, rawValue: understanding.customerTaxId.raw }] : [] }));
     const identityClusters = proposeCustomerIdentityClusters(signals); const summary = summarize(documents, duplicateFindings, identityClusters, relationships);
-    const checkpoint: SourceCheckpoint = { schemaVersion: 1, organizationId: source.organizationId, sourceType: source.sourceType, sourceId: source.sourceId, revision: corpusFingerprint, cursor: nextCursor, entries: checkpointEntries };
+    const checkpoint: SourceCheckpoint = { schemaVersion: 1, organizationId: source.organizationId, sourceType: source.sourceType, sourceId: source.sourceId, revision: corpusFingerprint, cursor: failures.length === 0 ? nextCursor : undefined, entries: checkpointEntries };
     return { report: { organizationId: source.organizationId, sourceType: source.sourceType, sourceId: source.sourceId, corpusFingerprint, documents, identityClusters, relationships, relationshipPlan, changes, failures, partialSuccess: failures.length > 0 && documents.length > 0, summary, metrics: { documentsDiscovered: discovered.length, documentsUnderstood: toUnderstand.length, documentsReused: reused.size, documentsFailed: failures.length, candidatePairsBeforeBlocking: relationshipPlan.pairsBeforeBlocking, candidatePairsAfterBlocking: relationshipPlan.pairsAfterBlocking, candidateReductionRatio: relationshipPlan.reductionRatio, fallbackAbstentions: relationshipPlan.fallbackAbstentions } }, checkpoint };
   }
 

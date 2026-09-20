@@ -24,6 +24,8 @@ export interface DocumentSource {
   readonly sourceType: DocumentSourceType;
   readonly sourceId: string;
   readonly organizationId: string;
+  /** Optional deterministic sub-source boundary for opaque cursor isolation. */
+  readonly cursorBoundary?: string;
   discover(): Promise<readonly DiscoveredDocument[]>;
 }
 
@@ -31,6 +33,7 @@ export interface SourceCursor {
   readonly organizationId: string;
   readonly sourceType: DocumentSourceType;
   readonly sourceId: string;
+  readonly boundary?: string;
   /** Opaque to RecoverIA and meaningful only to the owning source adapter. */
   readonly value: string;
 }
@@ -54,7 +57,7 @@ export function isIncrementalDocumentSource(source: DocumentSource): source is I
 }
 
 export function assertCursorBoundary(source: DocumentSource, cursor: SourceCursor): void {
-  if (cursor.organizationId !== source.organizationId || cursor.sourceType !== source.sourceType || cursor.sourceId !== source.sourceId) {
+  if (cursor.organizationId !== source.organizationId || cursor.sourceType !== source.sourceType || cursor.sourceId !== source.sourceId || cursor.boundary !== source.cursorBoundary) {
     throw new Error("SOURCE_CURSOR_BOUNDARY_MISMATCH");
   }
 }
