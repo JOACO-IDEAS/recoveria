@@ -37,7 +37,7 @@ describe("source-agnostic corpus processing", () => {
     const discovered = await source.discover();
     expect(discovered.map(({ provenance }) => provenance.locator)).toEqual(["nested/invoice.pdf", "notes.txt"]);
     const report = await new CorpusProcessor(new DeterministicDocumentUnderstandingProvider()).process(source);
-    expect(report.summary).toMatchObject({ documentsDiscovered: 2, documentsUnsupported: 1, documentsClassifiedAsInvoice: 1 });
+    expect(report.summary).toMatchObject({ documentsWithResult: 2, documentsUnsupported: 1, documentsClassifiedAsInvoice: 1 });
     expect(report.documents.every(({ source: item }) => item.fingerprintSha256.length === 64)).toBe(true);
   });
 
@@ -51,7 +51,7 @@ describe("source-agnostic corpus processing", () => {
   it("routes through the configured provider and is idempotent for repeated processing", async () => {
     const root = await tempRoot(); await writeFile(path.join(root, "invoice.pdf"), invoicePdf(2));
     const delegate = new DeterministicDocumentUnderstandingProvider(); let calls = 0; const keys: string[] = [];
-    const provider: DocumentUnderstandingProvider = { id: "spy", understand(request: DocumentUnderstandingRequest) { calls += 1; keys.push(request.idempotencyKey); return delegate.understand(request); } };
+    const provider: DocumentUnderstandingProvider = { id: "spy", processingVersion: "spy-v1", understand(request: DocumentUnderstandingRequest) { calls += 1; keys.push(request.idempotencyKey); return delegate.understand(request); } };
     const source = await LocalFolderSource.create("org-a", "repeatable", root); const processor = new CorpusProcessor(provider);
     const first = await processor.process(source); const second = await processor.process(source);
     expect(calls).toBe(2); expect(keys[0]).toBe(keys[1]); expect(second.corpusFingerprint).toBe(first.corpusFingerprint);
@@ -91,7 +91,7 @@ describe("source-agnostic corpus processing", () => {
     const root = await tempRoot();
     await Promise.all(Array.from({ length: 64 }, (_, index) => writeFile(path.join(root, `invoice-${index}.pdf`), invoicePdf(1_000 + index, `30-${String(80_000_000 + index).padStart(8, "0")}-1`, `Consorcio ${index}`, `Calle ${index}`))));
     const report = await new CorpusProcessor(new DeterministicDocumentUnderstandingProvider()).process(await LocalFolderSource.create("org-scale", "scale", root));
-    expect(report.summary.documentsDiscovered).toBe(64); expect(report.summary.documentsProcessed).toBe(64);
+    expect(report.summary.documentsWithResult).toBe(64); expect(report.summary.documentsProcessed).toBe(64);
     expect(report.scalability).toMatchObject({ relationshipComparisonComplexity: "O(n²)", warningThreshold: 1_000, warning: null });
   }, 20_000);
 });

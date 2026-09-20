@@ -5,8 +5,10 @@ import type { DocumentSource, SourceProvenance } from "./document-source";
 import type { DocumentUnderstandingProvider } from "./document-understanding-provider";
 import { proposeDocumentRelationships, type CohortDocument } from "./document-relationships";
 import type { DocumentParseResult, DocumentRelationshipReport, ExtractionConfidence, ObservedCandidate, StructuredDocumentUnderstanding } from "./types";
+import type { IncrementalCorpusRun, SourceCheckpoint } from "./incremental-corpus-processor";
+import { classifyCorpusDocument, type CorpusDocumentType } from "./corpus-classification";
 
-export type CorpusDocumentType = "INVOICE" | "CREDIT_NOTE" | "DEBIT_NOTE" | "UNKNOWN_DOCUMENT";
+export type { CorpusDocumentType } from "./corpus-classification";
 
 export interface CorpusSourceRecord {
   readonly sourceDocumentId: string;
@@ -26,7 +28,7 @@ export interface CorpusDocumentResult {
 }
 
 export interface CorpusSummary {
-  readonly documentsDiscovered: number;
+  readonly documentsWithResult: number;
   readonly documentsProcessed: number;
   readonly documentsUnsupported: number;
   readonly documentsClassifiedAsInvoice: number;
@@ -63,14 +65,6 @@ const allObservedCandidates = (u: StructuredDocumentUnderstanding): readonly Obs
   u.documentedNominalTotalCents, u.description, u.servicePeriodStart, u.servicePeriodEnd, u.quotationReference, u.installmentStage,
 ];
 
-export function classifyCorpusDocument(understanding?: StructuredDocumentUnderstanding): CorpusDocumentType {
-  const value = understanding?.documentType.normalized?.toUpperCase() ?? "";
-  if (value.includes("NOTA") && (value.includes("CRÉDITO") || value.includes("CREDITO"))) return "CREDIT_NOTE";
-  if (value.includes("NOTA") && (value.includes("DÉBITO") || value.includes("DEBITO"))) return "DEBIT_NOTE";
-  if (value.includes("FACTURA")) return "INVOICE";
-  return "UNKNOWN_DOCUMENT";
-}
-
 const coreComplete = (u?: StructuredDocumentUnderstanding): boolean => Boolean(u
   && u.invoiceNumber.normalized
   && u.dates.some((candidate) => candidate.semantic === "ISSUE_DATE" && candidate.normalized)
@@ -80,6 +74,11 @@ const coreComplete = (u?: StructuredDocumentUnderstanding): boolean => Boolean(u
 
 export class CorpusProcessor {
   constructor(private readonly provider: DocumentUnderstandingProvider) {}
+
+  async processIncremental(source: DocumentSource, previous?: SourceCheckpoint, entityCatalog: readonly EntityCatalogEntry[] = []): Promise<IncrementalCorpusRun> {
+    const { IncrementalCorpusProcessor } = await import("./incremental-corpus-processor");
+    return new IncrementalCorpusProcessor(this.provider).process(source, previous, entityCatalog);
+  }
 
   async process(source: DocumentSource, entityCatalog: readonly EntityCatalogEntry[] = []): Promise<CorpusIntelligenceReport> {
     const discovered = await source.discover();
@@ -114,7 +113,7 @@ export class CorpusProcessor {
     const contradictions = relationships.proposals.filter(({ status }) => status === "CONTRADICTED").length + identityClusters.filter(({ status }) => status === "CONTRADICTED").length;
     const unresolvedIdentities = identityClusters.filter(({ status }) => status === "UNKNOWN" || status === "AMBIGUOUS").length;
     const summary: CorpusSummary = {
-      documentsDiscovered: documents.length,
+      documentsWithResult: documents.length,
       documentsProcessed: documents.filter(({ parse }) => parse.status === "PARSED" || parse.status === "REVIEW_REQUIRED").length,
       documentsUnsupported: documents.filter(({ parse }) => parse.status === "UNSUPPORTED").length,
       documentsClassifiedAsInvoice: documents.filter(({ classification }) => classification === "INVOICE").length,

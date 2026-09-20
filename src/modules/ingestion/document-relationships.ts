@@ -84,12 +84,12 @@ function issueDateOf(u: StructuredDocumentUnderstanding): string | null {
   return u.dates.find(({ semantic }) => semantic === "ISSUE_DATE")?.normalized ?? null;
 }
 
-export function proposeDocumentRelationships(documents: readonly CohortDocument[]): DocumentRelationshipReport {
+export function proposeDocumentRelationships(documents: readonly CohortDocument[], candidatePairs?: readonly (readonly [number, number])[]): DocumentRelationshipReport {
   const proposals: DocumentRelationshipProposal[] = [];
   const matchedForSignal = new Set<string>();
 
-  for (let i = 0; i < documents.length; i += 1) {
-    for (let j = i + 1; j < documents.length; j += 1) {
+  const pairs = candidatePairs ?? documents.flatMap((_, i) => documents.slice(i + 1).map((__, offset) => [i, i + offset + 1] as const));
+  for (const [i, j] of pairs) {
       const left = documents[i]!, right = documents[j]!;
       const a = left.understanding, b = right.understanding;
       const customer = matchCustomer(a, b);
@@ -182,7 +182,6 @@ export function proposeDocumentRelationships(documents: readonly CohortDocument[
           });
         }
       }
-    }
   }
 
   // Any document that raises an installment/advance/balance/quotation signal

@@ -19,10 +19,9 @@ async function main(): Promise<void> {
   if (!within(inputDirectory, authorizedInvoiceRoot) || !within(outputPath, authorizedAnalysisRoot)) throw new Error("PRIVATE_EVALUATION_BOUNDARY_REJECTED");
   await mkdir(path.dirname(outputPath), { recursive: true, mode: 0o700 });
   const source = await LocalFolderSource.create("private-local-evaluation-only", "authorized-private-local-corpus", inputDirectory);
-  const report = await new CorpusProcessor(new DeterministicDocumentUnderstandingProvider()).process(source);
+  const { report } = await new CorpusProcessor(new DeterministicDocumentUnderstandingProvider()).processIncremental(source);
   await writeFile(outputPath, `${JSON.stringify(report, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
   process.stdout.write(`${JSON.stringify(report.summary)}\n`);
 }
 
 void main();
-
