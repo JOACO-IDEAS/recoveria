@@ -196,6 +196,22 @@ enum CommunicationDeliveryStatus {
   DELIVERY_UNKNOWN
 }
 
+enum DriveConnectionLifecycleState {
+  DISCONNECTED
+  AUTHORIZATION_PENDING
+  CONNECTED
+  REAUTHORIZATION_REQUIRED
+  REVOKED
+}
+
+enum DrivePilotExecutionStatus {
+  PENDING
+  RUNNING
+  SUCCEEDED
+  FAILED
+  ABORTED
+}
+
 model Organization {
   id                  String                     @id @default(cuid())
   name                String
@@ -823,4 +839,97 @@ model LegalReviewFlag {
   receivable     Receivable?           @relation(fields: [receivableId], references: [id], onDelete: Restrict)
 
   @@index([organizationId, status, asOf])
+}
+
+model DriveOAuthState {
+  stateHash       String   @id
+  organizationId String
+  operatorId     String
+  connectionId   String
+  nonceHash       String
+  callbackUrl     String
+  schemaVersion  Int      @default(1)
+  createdAt       DateTime @default(now())
+  expiresAt       DateTime
+  consumedAt      DateTime?
+
+  @@index([organizationId, connectionId, expiresAt])
+}
+
+model DriveConnectionState {
+  organizationId String
+  connectionId   String
+  state          DriveConnectionLifecycleState @default(DISCONNECTED)
+  revision       Int      @default(1)
+  updatedAt      DateTime @updatedAt
+
+  @@id([organizationId, connectionId])
+  @@index([organizationId, state])
+}
+
+model DriveCredentialEnvelope {
+  organizationId             String
+  connectionId               String
+  encryptedRefreshCredential Bytes
+  keyId                       String
+  keyVersion                  String
+  grantedScopes               String[]
+  providerSubject             String
+  revision                    Int      @default(1)
+  createdAt                   DateTime @default(now())
+  updatedAt                   DateTime @updatedAt
+
+  @@id([organizationId, connectionId])
+}
+
+model DriveSecurityAuditEvent {
+  id                    String   @id @default(cuid())
+  organizationId        String
+  connectionId          String
+  executionId           String
+  documentReference     String
+  eventType              String
+  operation              String
+  outcome                String
+  failureClassification String?
+  rootProof              String
+  occurredAt             DateTime
+  createdAt              DateTime @default(now())
+
+  @@index([organizationId, connectionId, executionId, occurredAt])
+  @@index([organizationId, outcome, occurredAt])
+}
+
+model DriveSourceCheckpoint {
+  organizationId String
+  sourceType     String
+  sourceId       String
+  connectionId   String
+  processingVersion String
+  checkpoint     Json
+  version        Int      @default(1)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@id([organizationId, sourceType, sourceId, connectionId])
+}
+
+model DrivePilotExecution {
+  id                    String   @id
+  organizationId        String
+  connectionId          String
+  authorizedRootId      String
+  status                DrivePilotExecutionStatus @default(PENDING)
+  configurationVersion  String
+  startedAt             DateTime?
+  completedAt           DateTime?
+  failureClassification String?
+  discoveredCount       Int      @default(0)
+  downloadedCount       Int      @default(0)
+  pageCount             Int      @default(0)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@index([organizationId, connectionId, status])
+  @@index([organizationId, createdAt])
 }

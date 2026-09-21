@@ -107,6 +107,6 @@ export function inspectPilotActivation(config: PilotActivationConfiguration | nu
   if (!config.organizationId) reasons.push("ORGANIZATION_UNBOUND"); if (!config.connectionId) reasons.push("CONNECTION_UNBOUND"); if (!config.authorizedRootId) reasons.push("ROOT_UNBOUND");
   if (!config.encryptionConfigured) reasons.push("ENCRYPTION_NOT_CONFIGURED"); if (!config.credentialVaultConfigured) reasons.push("VAULT_NOT_CONFIGURED"); if (!config.oauthProviderConfigured) reasons.push("OAUTH_PROVIDER_NOT_CONFIGURED"); if (!config.auditPersistenceConfigured) reasons.push("AUDIT_NOT_CONFIGURED"); if (!config.checkpointPersistenceConfigured) reasons.push("CHECKPOINT_NOT_CONFIGURED");
   if (!limitsAreValid(config.limits)) reasons.push("LIMITS_INVALID");
-  if (!lifecycle || !["DISCONNECTED", "REAUTHORIZATION_REQUIRED"].includes(lifecycle)) reasons.push("LIFECYCLE_INCOMPATIBLE");
+  if (!lifecycle || lifecycle === "REVOKED") reasons.push("LIFECYCLE_INCOMPATIBLE");
   return { status: reasons.length ? "NOT_READY" : "READY", reasons };
 }
