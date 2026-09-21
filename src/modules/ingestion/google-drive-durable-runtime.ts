@@ -43,9 +43,12 @@ export interface DurableCheckpointPort { available(): Promise<boolean>; load(key
 export interface PilotPageDocument { readonly fileId: string; readonly rootId: string; readonly mimeType: string; readonly declaredBytes: number }
 export interface PilotRuntimeDriver { listPage(input: { rootId: string; pageToken?: string; signal: AbortSignal }): Promise<{ documents: readonly PilotPageDocument[]; nextPageToken?: string }>; download(input: { fileId: string; maximumBytes: number; signal: AbortSignal }): Promise<Uint8Array> }
 export interface OneShotPilotInvocation { readonly operatorConfirmed: true; readonly organizationId: string; readonly connectionId: string; readonly authorizedRootId: string; readonly configurationVersion: string }
+export interface PilotCompletionContext { readonly executionId: string; readonly signal: AbortSignal; readonly discoveredCount: number; readonly downloadedCount: number; readonly pageCount: number }
+export type PilotCheckpointCommit = () => Promise<void>;
+export type PilotCompletionHook = (context: PilotCompletionContext) => Promise<PilotCheckpointCommit>;
 export class OneShotGoogleDrivePilotOrchestrator {
   constructor(private readonly lifecycle: ConnectionLifecycleRepository, private readonly executions: PilotExecutionRepository, private readonly audit: DownloadSecurityAuditSink, private readonly checkpoints: DurableCheckpointPort, private readonly driver: PilotRuntimeDriver, private readonly now: () => number = Date.now) {}
-  async execute(config: PilotActivationConfiguration, invocation: OneShotPilotInvocation): Promise<PilotExecutionRecord> {
+  async execute(config: PilotActivationConfiguration, invocation: OneShotPilotInvocation, beforeSuccess?: PilotCompletionHook): Promise<PilotExecutionRecord> {
     const connection = await this.lifecycle.load(invocation.organizationId, invocation.connectionId);
     if (inspectPilotActivation(config, connection?.state ?? null).status !== "READY" || connection?.state !== "CONNECTED") throw new Error("GOOGLE_DRIVE_ACTIVATION_NOT_READY");
     if (invocation.operatorConfirmed !== true || invocation.organizationId !== config.organizationId || invocation.connectionId !== config.connectionId || invocation.authorizedRootId !== config.authorizedRootId) throw new Error("PILOT_EXECUTION_BINDING_MISMATCH");
@@ -84,6 +87,12 @@ export class OneShotGoogleDrivePilotOrchestrator {
         pageToken = page.nextPageToken;
       } while (pageToken);
       assertDeadline();
+      if (beforeSuccess) {
+        const commit = await this.#awaitDeadline(beforeSuccess({ executionId: id, signal: controller.signal, discoveredCount, downloadedCount, pageCount }), controller.signal);
+        assertDeadline();
+        clearTimeout(timer);
+        await commit();
+      }
       const completedAt = new Date(this.now()).toISOString();
       await this.executions.finish(id, { status: "SUCCEEDED", completedAt, failureClassification: undefined, discoveredCount, downloadedCount, pageCount });
       return { ...base, status: "SUCCEEDED", completedAt, discoveredCount, downloadedCount, pageCount };

@@ -5,8 +5,11 @@ export type PilotConnectionState = "DISCONNECTED" | "AUTHORIZATION_PENDING" | "C
 export interface DriveCredentialProvider { getValidAccessToken(connectionId: string): Promise<{ readonly value: string }> }
 export type GoogleDriveOperation = "FILES_LIST" | "FILES_GET" | "FILES_DOWNLOAD" | "CHANGES_START_TOKEN" | "CHANGES_LIST";
 export const READ_ONLY_GOOGLE_DRIVE_OPERATIONS: readonly GoogleDriveOperation[] = ["FILES_LIST", "FILES_GET", "FILES_DOWNLOAD", "CHANGES_START_TOKEN", "CHANGES_LIST"];
-export interface GoogleDriveTransportRequest { readonly operation: GoogleDriveOperation; readonly accessToken: string; readonly parameters: Readonly<Record<string, string | number | boolean | undefined>>; readonly maximumResponseBytes?: number }
+export interface GoogleDriveTransportRequest { readonly operation: GoogleDriveOperation; readonly accessToken: string; readonly parameters: Readonly<Record<string, string | number | boolean | undefined>>; readonly maximumResponseBytes?: number; readonly signal?: AbortSignal }
+export const GOOGLE_DRIVE_RETRY_MODE = Symbol("GOOGLE_DRIVE_RETRY_MODE");
+export type GoogleDriveRetryMode = "SINGLE_ATTEMPT" | "RETRY_CAPABLE";
 export interface GoogleDriveTransport { execute<T>(request: GoogleDriveTransportRequest): Promise<T> }
+export interface DeclaredGoogleDriveTransport extends GoogleDriveTransport { readonly [GOOGLE_DRIVE_RETRY_MODE]: GoogleDriveRetryMode }
 export class GoogleDriveTransportError extends Error { constructor(readonly status?: number, readonly reasons: readonly string[] = [], readonly network?: "TIMEOUT" | "INTERRUPTED", readonly retryAfterMs?: number) { super("GOOGLE_DRIVE_TRANSPORT_FAILURE"); } }
 
 interface GoogleFile { readonly id?: string; readonly name?: string; readonly mimeType?: string; readonly size?: string; readonly modifiedTime?: string; readonly parents?: readonly string[]; readonly trashed?: boolean; readonly driveId?: string; readonly shortcutDetails?: { readonly targetId?: string } }
