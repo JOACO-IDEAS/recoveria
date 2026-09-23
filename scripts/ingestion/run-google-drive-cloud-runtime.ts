@@ -18,6 +18,7 @@ const connectionId = required("CONNECTION_ID");
 const callbackPath = required("CALLBACK_PATH");
 const callbackUrl = required("EXACT_CALLBACK_URL");
 const kmsKeyVersion = required("KMS_KEY_VERSION");
+const oauthClientId = required("GOOGLE_CLIENT_ID");
 const oauthSecretReference = required("GOOGLE_CLIENT_SECRET_REFERENCE");
 const port = Number(process.env.PORT ?? "8080");
 if (!Number.isSafeInteger(port) || port < 1 || port > 65_535) throw new Error("CLOUD_RUNTIME_PORT_INVALID");
@@ -37,7 +38,7 @@ const callbackRuntime = new DurableGoogleDriveCallbackRuntime(
 );
 const activation: PilotActivationConfiguration = {
   activationEnabled: false,
-  googleClientId: "NOT_CONFIGURED",
+  googleClientId: oauthClientId,
   googleClientSecretReference: oauthSecretReference,
   exactCallbackUrl: callbackUrl,
   requiredScope: "https://www.googleapis.com/auth/drive.readonly",
