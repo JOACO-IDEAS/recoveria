@@ -22,10 +22,10 @@ describe("Google Drive Cloud Run bootstrap boundary", () => {
 
   it("preserves duplicate rejection and pre-OAuth durable fail-closed behavior", async () => {
     const probe = vi.fn(async () => "recoveria_pilot"); const handler = runtime(probe);
-    const invalid = await handler({ method: "GET", path: "/oauth/google/callback", query: { state: "state", nonce: "nonce", code: "code" } });
+    const invalid = await handler({ method: "GET", path: "/oauth/google/callback", query: { state: "state", code: "code" } });
     expect(invalid).toMatchObject({ status: 400, body: JSON.stringify({ status: "CALLBACK_REJECTED" }) });
     expect(invalid.body).not.toMatch(/state|nonce|code/);
-    const duplicate = await handler({ method: "GET", path: "/oauth/google/callback", query: callbackQuery(new URLSearchParams("state=a&state=b&nonce=n&code=c")) });
+    const duplicate = await handler({ method: "GET", path: "/oauth/google/callback", query: callbackQuery(new URLSearchParams("state=a&state=b&code=c")) });
     expect(duplicate).toMatchObject({ status: 400, body: JSON.stringify({ status: "INVALID_CALLBACK" }) });
     expect(probe).not.toHaveBeenCalled();
   });

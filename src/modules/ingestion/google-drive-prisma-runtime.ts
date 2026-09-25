@@ -4,7 +4,17 @@ import type { ConnectionLifecycleRecord, ConnectionLifecycleRepository, Credenti
 import type { DurableCheckpointPort, DurableOAuthStateRecord, DurableOAuthStateRepository, PilotExecutionRecord, PilotExecutionRepository } from "./google-drive-durable-runtime";
 import type { SourceCheckpoint } from "./incremental-corpus-processor";
 
-export class PrismaDriveOAuthStateRepository implements DurableOAuthStateRepository { constructor(private readonly client: PrismaClient) {} async create(record: DurableOAuthStateRecord): Promise<void> { await this.client.driveOAuthState.create({ data: { ...record, createdAt: new Date(record.createdAt), expiresAt: new Date(record.expiresAt), consumedAt: record.consumedAt ? new Date(record.consumedAt) : null } }); } async consume(input: { stateHash: string; nonceHash: string; organizationId: string; operatorId: string; connectionId: string; callbackUrl: string; now: string }): Promise<boolean> { const now = new Date(input.now); const result = await this.client.driveOAuthState.updateMany({ where: { stateHash: input.stateHash, nonceHash: input.nonceHash, organizationId: input.organizationId, operatorId: input.operatorId, connectionId: input.connectionId, callbackUrl: input.callbackUrl, consumedAt: null, expiresAt: { gt: now } }, data: { consumedAt: now } }); return result.count === 1; } }
+export class PrismaDriveOAuthStateRepository implements DurableOAuthStateRepository {
+  constructor(private readonly client: PrismaClient) {}
+  async create(record: DurableOAuthStateRecord): Promise<void> { await this.client.driveOAuthState.create({ data: { ...record, nonceHash: record.stateHash, createdAt: new Date(record.createdAt), expiresAt: new Date(record.expiresAt), consumedAt: record.consumedAt ? new Date(record.consumedAt) : null } }); }
+  async consume(input: { stateHash: string; now: string }): Promise<DurableOAuthStateRecord | null> {
+    const now = new Date(input.now);
+    const result = await this.client.driveOAuthState.updateMany({ where: { stateHash: input.stateHash, consumedAt: null, expiresAt: { gt: now } }, data: { consumedAt: now } });
+    if (result.count !== 1) return null;
+    const record = await this.client.driveOAuthState.findUniqueOrThrow({ where: { stateHash: input.stateHash } });
+    return { stateHash: record.stateHash, organizationId: record.organizationId, operatorId: record.operatorId, connectionId: record.connectionId, callbackUrl: record.callbackUrl, createdAt: record.createdAt.toISOString(), expiresAt: record.expiresAt.toISOString(), consumedAt: record.consumedAt?.toISOString(), schemaVersion: 1 };
+  }
+}
 
 export class PrismaDriveConnectionLifecycleRepository implements ConnectionLifecycleRepository { constructor(private readonly client: PrismaClient) {} async load(organizationId: string, connectionId: string): Promise<ConnectionLifecycleRecord | null> { return this.client.driveConnectionState.findUnique({ where: { organizationId_connectionId: { organizationId, connectionId } } }); } async transition(input: { organizationId: string; connectionId: string; from: readonly ConnectionLifecycleRecord["state"][]; to: ConnectionLifecycleRecord["state"] }): Promise<ConnectionLifecycleRecord> { const updated = await this.client.driveConnectionState.updateMany({ where: { organizationId: input.organizationId, connectionId: input.connectionId, state: { in: [...input.from] } }, data: { state: input.to, revision: { increment: 1 } } }); if (updated.count !== 1) throw new Error("CONNECTION_LIFECYCLE_CONFLICT"); return this.client.driveConnectionState.findUniqueOrThrow({ where: { organizationId_connectionId: { organizationId: input.organizationId, connectionId: input.connectionId } } }); } }
 

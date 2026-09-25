@@ -8,29 +8,31 @@ import { GoogleDriveTransportError, normalizeGoogleDriveError } from "./real-goo
 import { DriveSourceFetchError } from "./google-drive-source-contract";
 
 const digest = (value: string): string => createHash("sha256").update(value).digest("hex");
-export interface DurableOAuthStateRecord { readonly stateHash: string; readonly nonceHash: string; readonly organizationId: string; readonly operatorId: string; readonly connectionId: string; readonly callbackUrl: string; readonly createdAt: string; readonly expiresAt: string; readonly consumedAt?: string; readonly schemaVersion: 1 }
-export interface DurableOAuthStateRepository { create(record: DurableOAuthStateRecord): Promise<void>; consume(input: { stateHash: string; nonceHash: string; organizationId: string; operatorId: string; connectionId: string; callbackUrl: string; now: string }): Promise<boolean> }
+export interface DurableOAuthStateRecord { readonly stateHash: string; readonly organizationId: string; readonly operatorId: string; readonly connectionId: string; readonly callbackUrl: string; readonly createdAt: string; readonly expiresAt: string; readonly consumedAt?: string; readonly schemaVersion: 1 }
+export interface DurableOAuthStateRepository { create(record: DurableOAuthStateRecord): Promise<void>; consume(input: { stateHash: string; now: string }): Promise<DurableOAuthStateRecord | null> }
 export class DurableOAuthStateService {
   constructor(private readonly repository: DurableOAuthStateRepository, private readonly now: () => number = Date.now) {}
-  async issue(binding: { organizationId: string; operatorId: string; connectionId: string; callbackUrl: string }): Promise<{ state: string; nonce: string }> { const state = randomBytes(32).toString("base64url"); const nonce = randomBytes(32).toString("base64url"); const createdAt = this.now(); await this.repository.create({ stateHash: digest(state), nonceHash: digest(nonce), ...binding, createdAt: new Date(createdAt).toISOString(), expiresAt: new Date(createdAt + 10 * 60_000).toISOString(), schemaVersion: 1 }); return { state, nonce }; }
-  async consume(input: { state: string; nonce: string; organizationId: string; operatorId: string; connectionId: string; callbackUrl: string }): Promise<void> { const consumed = await this.repository.consume({ stateHash: digest(input.state), nonceHash: digest(input.nonce), organizationId: input.organizationId, operatorId: input.operatorId, connectionId: input.connectionId, callbackUrl: input.callbackUrl, now: new Date(this.now()).toISOString() }); if (!consumed) throw new Error("GOOGLE_OAUTH_STATE_INVALID_OR_CONSUMED"); }
+  async issue(binding: { organizationId: string; operatorId: string; connectionId: string; callbackUrl: string }): Promise<{ state: string }> { const state = randomBytes(32).toString("base64url"); const createdAt = this.now(); await this.repository.create({ stateHash: digest(state), ...binding, createdAt: new Date(createdAt).toISOString(), expiresAt: new Date(createdAt + 10 * 60_000).toISOString(), schemaVersion: 1 }); return { state }; }
+  async consume(state: string): Promise<DurableOAuthStateRecord> { const consumed = await this.repository.consume({ stateHash: digest(state), now: new Date(this.now()).toISOString() }); if (!consumed) throw new Error("GOOGLE_OAUTH_STATE_INVALID_OR_CONSUMED"); return consumed; }
 }
-export class InMemoryDurableOAuthStateRepository implements DurableOAuthStateRepository { readonly #records = new Map<string, DurableOAuthStateRecord>(); async create(record: DurableOAuthStateRecord): Promise<void> { if (this.#records.has(record.stateHash)) throw new Error("OAUTH_STATE_CONFLICT"); this.#records.set(record.stateHash, record); } async consume(input: { stateHash: string; nonceHash: string; organizationId: string; operatorId: string; connectionId: string; callbackUrl: string; now: string }): Promise<boolean> { const record = this.#records.get(input.stateHash); if (!record || record.consumedAt || record.nonceHash !== input.nonceHash || record.organizationId !== input.organizationId || record.operatorId !== input.operatorId || record.connectionId !== input.connectionId || record.callbackUrl !== input.callbackUrl || record.expiresAt <= input.now) return false; this.#records.set(input.stateHash, { ...record, consumedAt: input.now }); return true; } }
+export class InMemoryDurableOAuthStateRepository implements DurableOAuthStateRepository { readonly #records = new Map<string, DurableOAuthStateRecord>(); async create(record: DurableOAuthStateRecord): Promise<void> { if (this.#records.has(record.stateHash)) throw new Error("OAUTH_STATE_CONFLICT"); this.#records.set(record.stateHash, record); } async consume(input: { stateHash: string; now: string }): Promise<DurableOAuthStateRecord | null> { const record = this.#records.get(input.stateHash); if (!record || record.consumedAt || record.expiresAt <= input.now) return null; const consumed = { ...record, consumedAt: input.now }; this.#records.set(input.stateHash, consumed); return consumed; } }
 
-export interface RuntimeCallbackInput { readonly state: string; readonly nonce: string; readonly organizationId: string; readonly operatorId: string; readonly connectionId: string; readonly callbackUrl: string; readonly code?: string; readonly oauthError?: string }
+export interface RuntimeCallbackInput { readonly state: string; readonly code?: string; readonly oauthError?: string }
+export interface RuntimeCallbackIdentity { readonly organizationId: string; readonly operatorId: string; readonly connectionId: string; readonly callbackUrl: string }
 export class DurableGoogleDriveCallbackRuntime {
   constructor(private readonly states: DurableOAuthStateService, private readonly oauth: GoogleOAuthClientPort, private readonly vault: PersistentRefreshCredentialVault, private readonly lifecycle: ConnectionLifecycleRepository) {}
-  async handle(config: PilotActivationConfiguration, input: RuntimeCallbackInput): Promise<{ readonly status: "CONNECTED" }> {
-    const lifecycle = await this.lifecycle.load(input.organizationId, input.connectionId);
+  async handle(config: PilotActivationConfiguration, input: RuntimeCallbackInput, identity: RuntimeCallbackIdentity): Promise<{ readonly status: "CONNECTED" }> {
+    const lifecycle = await this.lifecycle.load(identity.organizationId, identity.connectionId);
     if (inspectPilotActivation(config, lifecycle?.state ?? null).status !== "READY" || !lifecycle || !["AUTHORIZATION_PENDING", "REAUTHORIZATION_REQUIRED"].includes(lifecycle.state)) throw new Error("GOOGLE_DRIVE_ACTIVATION_NOT_READY");
-    if (config.organizationId !== input.organizationId || config.connectionId !== input.connectionId || config.exactCallbackUrl !== input.callbackUrl) throw new Error("GOOGLE_DRIVE_RUNTIME_BINDING_MISMATCH");
-    await this.states.consume(input);
+    if (config.organizationId !== identity.organizationId || config.connectionId !== identity.connectionId || config.exactCallbackUrl !== identity.callbackUrl) throw new Error("GOOGLE_DRIVE_RUNTIME_BINDING_MISMATCH");
+    const binding = await this.states.consume(input.state);
+    if (binding.organizationId !== identity.organizationId || binding.operatorId !== identity.operatorId || binding.connectionId !== identity.connectionId || binding.callbackUrl !== identity.callbackUrl) throw new Error("GOOGLE_DRIVE_RUNTIME_BINDING_MISMATCH");
     if (input.oauthError) throw new Error("GOOGLE_OAUTH_CALLBACK_DENIED");
     if (!input.code) throw new Error("GOOGLE_OAUTH_CODE_MISSING");
-    const tokens = await this.oauth.exchangeAuthorizationCode({ code: input.code, callbackUrl: input.callbackUrl });
+    const tokens = await this.oauth.exchangeAuthorizationCode({ code: input.code, callbackUrl: binding.callbackUrl });
     if (tokens.grantedScopes.length !== 1 || tokens.grantedScopes[0] !== GOOGLE_DRIVE_READONLY_SCOPE || !tokens.refreshToken) throw new Error("GOOGLE_OAUTH_EXCHANGE_INVALID");
-    await this.vault.store({ organizationId: input.organizationId, connectionId: input.connectionId, refreshToken: tokens.refreshToken }, { grantedScopes: tokens.grantedScopes, providerSubject: tokens.subject });
-    await this.lifecycle.transition({ organizationId: input.organizationId, connectionId: input.connectionId, from: ["AUTHORIZATION_PENDING", "REAUTHORIZATION_REQUIRED"], to: "CONNECTED" });
+    await this.vault.store({ organizationId: binding.organizationId, connectionId: binding.connectionId, refreshToken: tokens.refreshToken }, { grantedScopes: tokens.grantedScopes, providerSubject: tokens.subject });
+    await this.lifecycle.transition({ organizationId: binding.organizationId, connectionId: binding.connectionId, from: ["AUTHORIZATION_PENDING", "REAUTHORIZATION_REQUIRED"], to: "CONNECTED" });
     return { status: "CONNECTED" };
   }
 }

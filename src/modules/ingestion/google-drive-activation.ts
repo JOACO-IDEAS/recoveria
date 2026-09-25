@@ -49,7 +49,7 @@ export class InMemoryConnectionLifecycleRepository implements ConnectionLifecycl
   async transition(input: { organizationId: string; connectionId: string; from: readonly PilotConnectionState[]; to: PilotConnectionState }): Promise<ConnectionLifecycleRecord> { const key = this.#key(input.organizationId, input.connectionId); const current = this.#records.get(key); const state = current?.state ?? "DISCONNECTED"; if (!input.from.includes(state)) throw new Error("CONNECTION_LIFECYCLE_CONFLICT"); const next = { organizationId: input.organizationId, connectionId: input.connectionId, state: input.to, revision: (current?.revision ?? 0) + 1 }; this.#records.set(key, next); return next; }
 }
 
-export interface OAuthCallbackInput { readonly organizationId: string; readonly operatorId: string; readonly connectionId: string; readonly callbackUrl: string; readonly state: string; readonly nonce: string; readonly code?: string; readonly oauthError?: string }
+export interface OAuthCallbackInput { readonly organizationId: string; readonly operatorId: string; readonly connectionId: string; readonly callbackUrl: string; readonly state: string; readonly code?: string; readonly oauthError?: string }
 export class GoogleDriveCallbackService {
   constructor(private readonly boundary: GoogleDriveOAuthBoundary, private readonly oauth: GoogleOAuthClientPort, private readonly vault: PersistentRefreshCredentialVault, private readonly lifecycle: ConnectionLifecycleRepository) {}
   async handle(input: OAuthCallbackInput): Promise<{ readonly state: "CONNECTED" }> {

@@ -36,7 +36,7 @@ export class WiredGoogleDrivePilotService {
 export interface FixedCallbackIdentity { readonly organizationId: string; readonly operatorId: string; readonly connectionId: string; readonly callbackUrl: string }
 export class FixedIdentityDurableCallbackAdapter {
   constructor(private readonly config: PilotActivationConfiguration, private readonly identity: FixedCallbackIdentity, private readonly runtime: DurableGoogleDriveCallbackRuntime) { if (config.organizationId !== identity.organizationId || config.connectionId !== identity.connectionId || config.exactCallbackUrl !== identity.callbackUrl) throw new Error("CALLBACK_FIXED_IDENTITY_MISMATCH"); }
-  async handle(protocol: { state: string; nonce: string; code?: string; oauthError?: string }): Promise<void> { const input: RuntimeCallbackInput = { ...protocol, ...this.identity }; await this.runtime.handle(this.config, input); }
+  async handle(protocol: RuntimeCallbackInput): Promise<void> { await this.runtime.handle(this.config, protocol, this.identity); }
 }
 
 export interface RealPilotCompositionConfiguration { readonly activation: PilotActivationConfiguration; readonly operatorId: string; readonly callbackPath: string; readonly kmsResource: string; readonly secretManagerResource: string }
