@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createCloudRunCallbackHandler } from "./google-drive-cloud-adapters";
+import { createCloudRunCallbackHandler, GOOGLE_OAUTH_CALLBACK_ISSUER, GOOGLE_OAUTH_CALLBACK_SCOPE } from "./google-drive-cloud-adapters";
 import { callbackQuery, createGoogleDriveCloudRuntime } from "./google-drive-cloud-runtime";
 
 describe("Google Drive Cloud Run bootstrap boundary", () => {
@@ -22,10 +22,10 @@ describe("Google Drive Cloud Run bootstrap boundary", () => {
 
   it("preserves duplicate rejection and pre-OAuth durable fail-closed behavior", async () => {
     const probe = vi.fn(async () => "recoveria_pilot"); const handler = runtime(probe);
-    const invalid = await handler({ method: "GET", path: "/oauth/google/callback", query: { state: "state", code: "code" } });
+    const invalid = await handler({ method: "GET", path: "/oauth/google/callback", query: { state: "state", code: "code", iss: GOOGLE_OAUTH_CALLBACK_ISSUER, scope: GOOGLE_OAUTH_CALLBACK_SCOPE } });
     expect(invalid).toMatchObject({ status: 400, body: JSON.stringify({ status: "CALLBACK_REJECTED" }) });
     expect(invalid.body).not.toMatch(/state|nonce|code/);
-    const duplicate = await handler({ method: "GET", path: "/oauth/google/callback", query: callbackQuery(new URLSearchParams("state=a&state=b&code=c")) });
+    const duplicate = await handler({ method: "GET", path: "/oauth/google/callback", query: callbackQuery(new URLSearchParams(`state=a&state=b&code=c&iss=${encodeURIComponent(GOOGLE_OAUTH_CALLBACK_ISSUER)}&scope=${encodeURIComponent(GOOGLE_OAUTH_CALLBACK_SCOPE)}`)) });
     expect(duplicate).toMatchObject({ status: 400, body: JSON.stringify({ status: "INVALID_CALLBACK" }) });
     expect(probe).not.toHaveBeenCalled();
   });

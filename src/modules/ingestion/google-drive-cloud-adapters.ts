@@ -33,4 +33,29 @@ export class GoogleOAuthHttpAdapter implements GoogleOAuthClientPort {
 export interface CallbackHttpRequest { readonly method: string; readonly path: string; readonly query: Readonly<Record<string, string | readonly string[] | undefined>>; readonly headers?: Readonly<Record<string, string | undefined>>; readonly cookies?: Readonly<Record<string, string | undefined>> }
 export interface CallbackHttpResponse { readonly status: number; readonly headers: Readonly<Record<string, string>>; readonly body: string }
 export interface CallbackRuntimePort { handle(input: { state: string; code?: string; oauthError?: string }): Promise<void> }
-export function createCloudRunCallbackHandler(exactPath: string, runtime: CallbackRuntimePort): (request: CallbackHttpRequest) => Promise<CallbackHttpResponse> { return async request => { if (request.method !== "GET" || request.path !== exactPath) return { status: 404, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" }, body: JSON.stringify({ status: "NOT_FOUND" }) }; const keys = Object.keys(request.query); const allowed = new Set(["state", "code", "error"]); const { state, code, error } = request.query; if (keys.some(key => !allowed.has(key)) || typeof state !== "string" || ((typeof code === "string") === (typeof error === "string")) || (code !== undefined && typeof code !== "string") || (error !== undefined && typeof error !== "string")) return { status: 400, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" }, body: JSON.stringify({ status: "INVALID_CALLBACK" }) }; try { await runtime.handle({ state, ...(typeof code === "string" ? { code } : {}), ...(typeof error === "string" ? { oauthError: error } : {}) }); return { status: 200, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" }, body: JSON.stringify({ status: "CONNECTED" }) }; } catch { return { status: 400, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" }, body: JSON.stringify({ status: "CALLBACK_REJECTED" }) }; } }; }
+export const GOOGLE_OAUTH_CALLBACK_ISSUER = "https://accounts.google.com";
+export const GOOGLE_OAUTH_CALLBACK_SCOPE = "https://www.googleapis.com/auth/drive.readonly";
+const callbackInvalid = (): CallbackHttpResponse => ({ status: 400, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" }, body: JSON.stringify({ status: "INVALID_CALLBACK" }) });
+const exactKeys = (keys: readonly string[], expected: readonly string[]): boolean => keys.length === expected.length && expected.every(key => keys.includes(key));
+const exactScope = (value: string): boolean => {
+  if (!value || value.trim() !== value) return false;
+  const tokens = value.split(" ");
+  if (tokens.some(token => !token || !/^[\x21\x23-\x5B\x5D-\x7E]+$/.test(token))) return false;
+  const unique = new Set(tokens);
+  return unique.size === tokens.length && unique.size === 1 && unique.has(GOOGLE_OAUTH_CALLBACK_SCOPE);
+};
+export function createCloudRunCallbackHandler(exactPath: string, runtime: CallbackRuntimePort): (request: CallbackHttpRequest) => Promise<CallbackHttpResponse> {
+  return async request => {
+    if (request.method !== "GET" || request.path !== exactPath) return { status: 404, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" }, body: JSON.stringify({ status: "NOT_FOUND" }) };
+    const keys = Object.keys(request.query);
+    const { state, code, error, iss, scope } = request.query;
+    const success = exactKeys(keys, ["state", "code", "iss", "scope"])
+      && typeof state === "string" && typeof code === "string" && typeof iss === "string" && typeof scope === "string"
+      && iss === GOOGLE_OAUTH_CALLBACK_ISSUER && exactScope(scope);
+    const denialKeys = exactKeys(keys, ["state", "error"]) || exactKeys(keys, ["state", "error", "iss"]);
+    const denial = denialKeys && typeof state === "string" && typeof error === "string" && (iss === undefined || iss === GOOGLE_OAUTH_CALLBACK_ISSUER);
+    if (!success && !denial) return callbackInvalid();
+    try { await runtime.handle({ state: state as string, ...(success ? { code: code as string } : { oauthError: error as string }) }); return { status: 200, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" }, body: JSON.stringify({ status: "CONNECTED" }) }; }
+    catch { return { status: 400, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" }, body: JSON.stringify({ status: "CALLBACK_REJECTED" }) }; }
+  };
+}

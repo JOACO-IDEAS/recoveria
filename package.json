@@ -17,6 +17,7 @@
     "client-zero:evaluate-local-corpus": "tsx scripts/ingestion/evaluate-local-corpus.ts",
     "pilot:google-drive": "tsx scripts/ingestion/run-google-drive-pilot.ts",
     "pilot:google-drive:cloud-runtime": "tsx scripts/ingestion/run-google-drive-cloud-runtime.ts",
+    "pilot:google-drive:oauth-initiate": "tsx scripts/ingestion/initiate-google-drive-oauth.ts",
     "smoke:email:controlled": "tsx scripts/communication/run-controlled-email-smoke-test.ts"
   },
   "dependencies": {

@@ -2,9 +2,9 @@ import { createServer } from "node:http";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "@prisma/client";
 import { Pool } from "pg";
-import { createCloudRunCallbackHandler } from "../../src/modules/ingestion/google-drive-cloud-adapters";
+import { createCloudRunCallbackHandler, GoogleCloudKmsManagedEncryptionProvider, GoogleOAuthHttpAdapter, GoogleSecretManagerAdapter } from "../../src/modules/ingestion/google-drive-cloud-adapters";
 import { callbackQuery, createGoogleDriveCloudRuntime } from "../../src/modules/ingestion/google-drive-cloud-runtime";
-import { PersistentRefreshCredentialVault, UnconfiguredGoogleOAuthClient, type PilotActivationConfiguration } from "../../src/modules/ingestion/google-drive-activation";
+import { ManagedKmsEncryptionAdapter, PersistentRefreshCredentialVault, type PilotActivationConfiguration } from "../../src/modules/ingestion/google-drive-activation";
 import { DurableGoogleDriveCallbackRuntime, DurableOAuthStateService } from "../../src/modules/ingestion/google-drive-durable-runtime";
 import { FixedIdentityDurableCallbackAdapter } from "../../src/modules/ingestion/google-drive-real-pilot-wiring";
 import { PrismaDriveConnectionLifecycleRepository, PrismaDriveCredentialEnvelopeRepository, PrismaDriveOAuthStateRepository } from "../../src/modules/ingestion/google-drive-prisma-runtime";
@@ -26,18 +26,32 @@ if (!Number.isSafeInteger(port) || port < 1 || port > 65_535) throw new Error("C
 const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: databaseUrl, max: 2 }) });
 const healthPool = new Pool({ connectionString: databaseUrl, max: 1 });
 const lifecycle = new PrismaDriveConnectionLifecycleRepository(prisma);
+const accessToken = async (): Promise<string> => {
+  const response = await fetch("http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token", { headers: { "Metadata-Flavor": "Google" } });
+  if (!response.ok) throw new Error("GOOGLE_RUNTIME_IDENTITY_UNAVAILABLE");
+  const payload = await response.json() as { access_token?: unknown };
+  if (typeof payload.access_token !== "string") throw new Error("GOOGLE_RUNTIME_IDENTITY_UNAVAILABLE");
+  return payload.access_token;
+};
+const authorizedJson = async (url: string, init: RequestInit = {}): Promise<Response> => fetch(url, { ...init, headers: { ...init.headers, Authorization: `Bearer ${await accessToken()}`, "Content-Type": "application/json" } });
+const secrets = new GoogleSecretManagerAdapter({ async accessSecretVersion(resourceName) { const response = await authorizedJson(`https://secretmanager.googleapis.com/v1/${resourceName}:access`, { method: "GET" }); if (!response.ok) return null; const payload = await response.json() as { payload?: { data?: unknown } }; return typeof payload.payload?.data === "string" ? new Uint8Array(Buffer.from(payload.payload.data, "base64")) : null; } });
+const kmsProvider = new GoogleCloudKmsManagedEncryptionProvider({
+  async encrypt(input) { const key = input.keyResource.replace(/\/cryptoKeyVersions\/[^/]+$/, ""); const response = await authorizedJson(`https://cloudkms.googleapis.com/v1/${key}:encrypt`, { method: "POST", body: JSON.stringify({ plaintext: Buffer.from(input.plaintext).toString("base64"), additionalAuthenticatedData: Buffer.from(input.additionalAuthenticatedData).toString("base64") }) }); if (!response.ok) throw new Error("KMS_FAILED"); const payload = await response.json() as { ciphertext?: unknown }; if (typeof payload.ciphertext !== "string") throw new Error("KMS_FAILED"); return new Uint8Array(Buffer.from(payload.ciphertext, "base64")); },
+  async decrypt(input) { const key = input.keyResource.replace(/\/cryptoKeyVersions\/[^/]+$/, ""); const response = await authorizedJson(`https://cloudkms.googleapis.com/v1/${key}:decrypt`, { method: "POST", body: JSON.stringify({ ciphertext: Buffer.from(input.ciphertext).toString("base64"), additionalAuthenticatedData: Buffer.from(input.additionalAuthenticatedData).toString("base64") }) }); if (!response.ok) throw new Error("KMS_FAILED"); const payload = await response.json() as { plaintext?: unknown }; if (typeof payload.plaintext !== "string") throw new Error("KMS_FAILED"); return new Uint8Array(Buffer.from(payload.plaintext, "base64")); },
+}, kmsKeyVersion);
+const oauth = new GoogleOAuthHttpAdapter(oauthClientId, callbackUrl, oauthSecretReference, secrets, async (url, init) => { const response = await fetch(url, init); return { status: response.status, body: response.body }; });
 const callbackRuntime = new DurableGoogleDriveCallbackRuntime(
   new DurableOAuthStateService(new PrismaDriveOAuthStateRepository(prisma)),
-  new UnconfiguredGoogleOAuthClient(),
+  oauth,
   new PersistentRefreshCredentialVault(
-    { async seal() { throw new Error("OAUTH_NOT_CONFIGURED"); }, async open() { throw new Error("OAUTH_NOT_CONFIGURED"); } },
+    new ManagedKmsEncryptionAdapter({ configured: true, keyId: kmsKeyVersion.replace(/\/cryptoKeyVersions\/[^/]+$/, ""), keyVersion: kmsKeyVersion.split("/").at(-1)! }, kmsProvider),
     new PrismaDriveCredentialEnvelopeRepository(prisma),
     { keyId: kmsKeyVersion.replace(/\/cryptoKeyVersions\/[^/]+$/, ""), keyVersion: kmsKeyVersion.split("/").at(-1)! },
   ),
   lifecycle,
 );
 const activation: PilotActivationConfiguration = {
-  activationEnabled: false,
+  activationEnabled: true,
   googleClientId: oauthClientId,
   googleClientSecretReference: oauthSecretReference,
   exactCallbackUrl: callbackUrl,
@@ -49,7 +63,7 @@ const activation: PilotActivationConfiguration = {
   auditPersistenceConfigured: true,
   credentialVaultConfigured: true,
   checkpointPersistenceConfigured: true,
-  oauthProviderConfigured: false,
+  oauthProviderConfigured: true,
   encryptionConfigured: true,
 };
 const fixed = new FixedIdentityDurableCallbackAdapter(activation, { organizationId, operatorId, connectionId, callbackUrl }, callbackRuntime);
