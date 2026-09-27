@@ -9,6 +9,7 @@ import { RetryingGoogleDriveTransport } from "./google-drive-pilot-infrastructur
 import type { DurableGoogleDriveCallbackRuntime } from "./google-drive-durable-runtime";
 import { IncrementalCorpusProcessor, type SourceCheckpoint } from "./incremental-corpus-processor";
 import { createCloudRunCallbackHandler, GOOGLE_OAUTH_CALLBACK_ISSUER, GOOGLE_OAUTH_CALLBACK_SCOPE } from "./google-drive-cloud-adapters";
+import { buildSyntheticDrivePilotCorpus, changedSyntheticDrivePilotFile } from "../../test/fixtures/google-drive-synthetic-pilot-corpus";
 
 const configuration = () => parsePilotActivationConfiguration({ ACTIVATION_ENABLED: "true", GOOGLE_CLIENT_ID: "synthetic-client", GOOGLE_CLIENT_SECRET_REFERENCE: "projects/p/secrets/oauth/versions/1", EXACT_CALLBACK_URL: "https://pilot.example.test/oauth/callback", REQUIRED_SCOPE: GOOGLE_DRIVE_READONLY_SCOPE, ORGANIZATION_ID: "org", CONNECTION_ID: "connection", AUTHORIZED_ROOT_ID: "root", EXPECTED_CORPUS_SIZE: "40", HARD_MAXIMUM_DOWNLOADS: "50", MAXIMUM_EXPANSION_RATIO: "1.25", MAXIMUM_PDF_BYTES: "26214400", MAXIMUM_PAGES: "10", MAXIMUM_RETRY_ATTEMPTS: "3", MAXIMUM_EXECUTION_DURATION_MS: "300000", AUDIT_PERSISTENCE_CONFIGURED: "true", CREDENTIAL_VAULT_CONFIGURED: "true", CHECKPOINT_PERSISTENCE_CONFIGURED: "true", OAUTH_PROVIDER_CONFIGURED: "true", ENCRYPTION_CONFIGURED: "true" });
 const invocation = { operatorConfirmed: true as const, organizationId: "org", connectionId: "connection", authorizedRootId: "root", configurationVersion: "test-v1" };
@@ -33,7 +34,7 @@ class MemoryCheckpoints implements DurableCheckpointPort {
   async load() { return this.checkpoint ? { version: this.version, checkpoint: this.checkpoint } : null; }
   async save(_key: unknown, _connection: string, checkpoint: SourceCheckpoint, expected: number | null) { if (this.failSave || expected !== (this.version || null)) throw new Error("CHECKPOINT_OPTIMISTIC_LOCK_CONFLICT"); this.checkpoint = checkpoint; this.version += 1; }
 }
-function harness(transport: FakeTransport, checkpoints = new MemoryCheckpoints(), provider: DocumentUnderstandingProvider = new DeterministicDocumentUnderstandingProvider(), auditFailure = false) { const lifecycle = new InMemoryConnectionLifecycleRepository(); lifecycle.seed({ organizationId: "org", connectionId: "connection", state: "CONNECTED", revision: 1 }); const binding = new SingleAttemptSignalBindingTransport(transport); const client = new RealGoogleDriveClient({ organizationId: "org", connectionId: "connection", googleSubject: "subject", authorizedRootId: "root", authorizationState: "CONNECTED" }, { async getValidAccessToken() { return { value: "token-sentinel" }; } }, binding); const driver = new RealGoogleDrivePilotRuntimeDriver(client, binding, "root"); const events: DownloadSecurityEvent[] = []; const executions = new InMemoryPilotExecutionRepository(); const orchestrator = new OneShotGoogleDrivePilotOrchestrator(lifecycle, executions, { async append(event) { if (auditFailure) throw new Error("AUDIT_UNAVAILABLE"); events.push(event); } }, checkpoints, driver); return { service: new WiredGoogleDrivePilotService(orchestrator, driver, new IncrementalCorpusProcessor(provider), checkpoints), driver, events, executions, checkpoints };
+function harness(transport: FakeTransport, checkpoints = new MemoryCheckpoints(), provider: DocumentUnderstandingProvider = new DeterministicDocumentUnderstandingProvider(), auditFailure = false, bindAuditToExecution = false) { const lifecycle = new InMemoryConnectionLifecycleRepository(); lifecycle.seed({ organizationId: "org", connectionId: "connection", state: "CONNECTED", revision: 1 }); const binding = new SingleAttemptSignalBindingTransport(transport); const client = new RealGoogleDriveClient({ organizationId: "org", connectionId: "connection", googleSubject: "subject", authorizedRootId: "root", authorizationState: "CONNECTED" }, { async getValidAccessToken() { return { value: "token-sentinel" }; } }, binding); const driver = new RealGoogleDrivePilotRuntimeDriver(client, binding, "root"); const events: DownloadSecurityEvent[] = []; const auditExecutionIds: string[] = []; const executions = new InMemoryPilotExecutionRepository(); const sink = { async append(event: DownloadSecurityEvent) { if (auditFailure) throw new Error("AUDIT_UNAVAILABLE"); events.push(event); } }; const orchestrator = new OneShotGoogleDrivePilotOrchestrator(lifecycle, executions, bindAuditToExecution ? executionId => { auditExecutionIds.push(executionId); return sink; } : sink, checkpoints, driver); return { service: new WiredGoogleDrivePilotService(orchestrator, driver, new IncrementalCorpusProcessor(provider), checkpoints), driver, events, auditExecutionIds, executions, checkpoints };
 }
 
 describe("real Google Drive pilot wiring", () => {
@@ -45,7 +46,45 @@ describe("real Google Drive pilot wiring", () => {
 
   it("re-proves root membership after discovery and never downloads a moved-out file", async () => { const transport = new FakeTransport(); const bytes = invoicePdf(1); transport.replace([{ id: "file", bytes }]); const { driver } = harness(transport); await driver.listPage({ rootId: "root", signal: new AbortController().signal }); transport.metadata.set("outside", { id: "outside", name: "Outside", mimeType: "application/vnd.google-apps.folder", parents: [], trashed: false }); transport.metadata.set("file", pdfMetadata("file", bytes, ["outside"])); await expect(driver.download({ fileId: "file", maximumBytes: 1_000_000, signal: new AbortController().signal })).rejects.toBeDefined(); expect(transport.downloads).toBe(0); });
 
-  it("runs a production-shaped 40-record two-run corpus and commits only complete checkpoints", async () => { const transport = new FakeTransport(); const runOne = Array.from({ length: 40 }, (_, index) => ({ id: `file-${index}`, bytes: invoicePdf(index), name: index < 2 ? "same-name.pdf" : undefined })); transport.replace(runOne); const delegate = new DeterministicDocumentUnderstandingProvider(); const understood: number[] = []; const provider: DocumentUnderstandingProvider = { id: delegate.id, processingVersion: delegate.processingVersion, async understand(request) { understood.push(request.documents.length); return delegate.understand(request); } }; const state = harness(transport, new MemoryCheckpoints(), provider); const first = await state.service.execute(configuration(), invocation); expect(first.execution.status).toBe("SUCCEEDED"); expect(first.report.metrics).toMatchObject({ documentsDiscovered: 40, documentsUnderstood: 40, documentsReused: 0 }); expect(state.checkpoints.version).toBe(1); const changed = invoicePdf(900); transport.replace([...runOne.slice(0, 38).map((file, index) => ({ ...file, name: index === 0 ? "renamed.pdf" : file.name })), { id: "file-38", bytes: changed }, { id: "new-source", bytes: runOne[39].bytes }]); const second = await state.service.execute(configuration(), invocation); expect(second.report.metrics).toMatchObject({ documentsDiscovered: 40, documentsUnderstood: 2, documentsReused: 38 }); const changes = second.report.changes.map(change => change.kind); expect(changes).toEqual(expect.arrayContaining(["CONTENT_CHANGED", "SAME_CONTENT_DIFFERENT_SOURCE_RECORD", "REMOVED"])); expect(second.report.changes.find(change => change.sourceDocumentId === "file-0")?.kind).toBe("UNCHANGED"); expect(understood).toEqual([40, 2]); expect(state.checkpoints.version).toBe(2); expect(state.events[0]?.outcome).toBe("STARTED"); expect(state.events[1]?.outcome).toBe("SUCCEEDED"); });
+  it("rehearses the deterministic 40-PDF pilot, unchanged reuse, and incremental mutations", async () => {
+    const transport = new FakeTransport();
+    const corpus = buildSyntheticDrivePilotCorpus();
+    const runOne = corpus.map(file => ({ id: file.id, bytes: file.bytes, name: file.fileName }));
+    transport.replace(runOne);
+    const delegate = new DeterministicDocumentUnderstandingProvider();
+    const understood: number[] = [];
+    const provider: DocumentUnderstandingProvider = { id: delegate.id, processingVersion: delegate.processingVersion, async understand(request) { understood.push(request.documents.length); return delegate.understand(request); } };
+    const state = harness(transport, new MemoryCheckpoints(), provider, false, true);
+
+    const first = await state.service.execute(configuration(), invocation);
+    expect(first.execution.status).toBe("SUCCEEDED");
+    expect(state.auditExecutionIds[0]).toBe(first.execution.id);
+    expect(first.report.metrics).toMatchObject({ documentsDiscovered: 40, documentsUnderstood: 40, documentsReused: 0 });
+    expect(first.report.summary).toMatchObject({ documentsClassifiedAsInvoice: 40, exactDuplicates: 1, identityClusters: 5, unresolvedIdentities: 0, relationshipProposals: 248, contradictions: 0, incompleteCoreDocuments: 0 });
+    expect(state.checkpoints.version).toBe(1);
+
+    transport.replace(runOne);
+    const unchanged = await state.service.execute(configuration(), invocation);
+    expect(unchanged.report.metrics).toMatchObject({ documentsDiscovered: 40, documentsUnderstood: 0, documentsReused: 40 });
+    expect(unchanged.report.changes.every(change => change.kind === "UNCHANGED")).toBe(true);
+    expect(state.checkpoints.version).toBe(2);
+
+    const changed = changedSyntheticDrivePilotFile(corpus[10]!);
+    transport.replace([
+      ...runOne.slice(0, 38).map(file => file.id === corpus[0]!.id ? { ...file, name: "renombrado-misma-identidad.pdf" } : file.id === changed.id ? { id: file.id, name: file.name, bytes: changed.bytes } : file),
+      { id: "synthetic-drive-new-duplicate", name: "duplicado-nuevo-origen.pdf", bytes: corpus[20]!.bytes },
+    ]);
+    const incremental = await state.service.execute(configuration(), invocation);
+    expect(incremental.report.metrics).toMatchObject({ documentsDiscovered: 39, documentsUnderstood: 2, documentsReused: 37 });
+    const changes = incremental.report.changes.map(change => change.kind);
+    expect(changes).toEqual(expect.arrayContaining(["CONTENT_CHANGED", "SAME_CONTENT_DIFFERENT_SOURCE_RECORD", "REMOVED"]));
+    expect(incremental.report.changes.find(change => change.sourceDocumentId === corpus[0]!.id)?.kind).toBe("UNCHANGED");
+    expect(understood).toEqual([40, 2]);
+    expect(state.checkpoints.version).toBe(3);
+    expect(state.auditExecutionIds).toEqual([first.execution.id, unchanged.execution.id, incremental.execution.id]);
+    expect(state.events[0]?.outcome).toBe("STARTED");
+    expect(state.events[1]?.outcome).toBe("SUCCEEDED");
+  });
 
   it("does not advance the prior checkpoint on audit, processing, or CAS failure", async () => { for (const failure of ["audit", "processing", "cas"] as const) { const transport = new FakeTransport(); transport.replace([{ id: "file", bytes: invoicePdf(1) }]); const checkpoints = new MemoryCheckpoints(); const initial = harness(transport, checkpoints); await initial.service.execute(configuration(), invocation); const version = checkpoints.version; transport.replace([{ id: "file", bytes: invoicePdf(2) }]); const provider = failure === "processing" ? { id: "failing", processingVersion: "v2", async understand() { throw new Error("PROVIDER_FAILED"); } } : new DeterministicDocumentUnderstandingProvider(); checkpoints.failSave = failure === "cas"; await expect(harness(transport, checkpoints, provider, failure === "audit").service.execute(configuration(), invocation)).rejects.toBeDefined(); expect(checkpoints.version).toBe(version); } });
   it("rejects a mismatched checkpoint boundary before any Drive operation", async () => { const transport = new FakeTransport(); transport.replace([{ id: "file", bytes: invoicePdf(1) }]); const checkpoints = new MemoryCheckpoints(); await harness(transport, checkpoints).service.execute(configuration(), invocation); checkpoints.checkpoint = { ...checkpoints.checkpoint!, organizationId: "other" }; transport.attempts.clear(); await expect(harness(transport, checkpoints).service.execute(configuration(), invocation)).rejects.toThrow("CHECKPOINT_SOURCE_BOUNDARY_MISMATCH"); expect(transport.attempts.size).toBe(0); });

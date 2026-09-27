@@ -49,13 +49,13 @@ export interface PilotCompletionContext { readonly executionId: string; readonly
 export type PilotCheckpointCommit = () => Promise<void>;
 export type PilotCompletionHook = (context: PilotCompletionContext) => Promise<PilotCheckpointCommit>;
 export class OneShotGoogleDrivePilotOrchestrator {
-  constructor(private readonly lifecycle: ConnectionLifecycleRepository, private readonly executions: PilotExecutionRepository, private readonly audit: DownloadSecurityAuditSink, private readonly checkpoints: DurableCheckpointPort, private readonly driver: PilotRuntimeDriver, private readonly now: () => number = Date.now) {}
+  constructor(private readonly lifecycle: ConnectionLifecycleRepository, private readonly executions: PilotExecutionRepository, private readonly auditSource: DownloadSecurityAuditSink | ((executionId: string) => DownloadSecurityAuditSink), private readonly checkpoints: DurableCheckpointPort, private readonly driver: PilotRuntimeDriver, private readonly now: () => number = Date.now) {}
   async execute(config: PilotActivationConfiguration, invocation: OneShotPilotInvocation, beforeSuccess?: PilotCompletionHook): Promise<PilotExecutionRecord> {
     const connection = await this.lifecycle.load(invocation.organizationId, invocation.connectionId);
     if (inspectPilotActivation(config, connection?.state ?? null).status !== "READY" || connection?.state !== "CONNECTED") throw new Error("GOOGLE_DRIVE_ACTIVATION_NOT_READY");
     if (invocation.operatorConfirmed !== true || invocation.organizationId !== config.organizationId || invocation.connectionId !== config.connectionId || invocation.authorizedRootId !== config.authorizedRootId) throw new Error("PILOT_EXECUTION_BINDING_MISMATCH");
     if (!(await this.checkpoints.available())) throw new Error("PILOT_CHECKPOINT_UNAVAILABLE");
-    const id = randomUUID(); const startedAtMs = this.now();
+    const id = randomUUID(); const audit = typeof this.auditSource === "function" ? this.auditSource(id) : this.auditSource; const startedAtMs = this.now();
     const base: PilotExecutionRecord = { id, organizationId: invocation.organizationId, connectionId: invocation.connectionId, authorizedRootId: invocation.authorizedRootId, status: "PENDING", configurationVersion: invocation.configurationVersion, startedAt: new Date(startedAtMs).toISOString(), discoveredCount: 0, downloadedCount: 0, pageCount: 0 };
     await this.executions.begin(base);
     const controller = new AbortController(); const deadline = startedAtMs + config.limits.maximumExecutionDurationMs;
@@ -78,13 +78,13 @@ export class OneShotGoogleDrivePilotOrchestrator {
           if (++downloadedCount > config.limits.hardMaximumDownloads || downloadedCount > anomalyLimit) throw new Error("PILOT_DOWNLOAD_LIMIT_EXCEEDED");
           const reference = digest(`${config.connectionId}\0${document.fileId}`);
           const started: DownloadSecurityEvent = { organizationId: config.organizationId, connectionId: config.connectionId, documentReference: reference, timestamp: new Date(this.now()).toISOString(), rootProof: "PASSED", outcome: "STARTED" };
-          await this.audit.append(started);
+          await audit.append(started);
           try {
             const bytes = await this.#retry(() => this.driver.download({ fileId: document.fileId, maximumBytes: config.limits.maximumPdfBytes, signal: controller.signal }), config.limits.maximumRetryAttempts, assertDeadline, controller.signal);
             assertDeadline();
             if (bytes.byteLength > config.limits.maximumPdfBytes) throw new Error("PILOT_PDF_LIMIT_EXCEEDED");
-            await this.audit.append({ ...started, timestamp: new Date(this.now()).toISOString(), outcome: "SUCCEEDED" });
-          } catch (error) { await this.audit.append({ ...started, timestamp: new Date(this.now()).toISOString(), outcome: "FAILED" }); throw error; }
+            await audit.append({ ...started, timestamp: new Date(this.now()).toISOString(), outcome: "SUCCEEDED" });
+          } catch (error) { await audit.append({ ...started, timestamp: new Date(this.now()).toISOString(), outcome: "FAILED" }); throw error; }
         }
         pageToken = page.nextPageToken;
       } while (pageToken);
