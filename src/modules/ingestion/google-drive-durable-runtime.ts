@@ -61,6 +61,7 @@ export class OneShotGoogleDrivePilotOrchestrator {
     const controller = new AbortController(); const deadline = startedAtMs + config.limits.maximumExecutionDurationMs;
     const timer = setTimeout(() => controller.abort(), config.limits.maximumExecutionDurationMs);
     let discoveredCount = 0; let downloadedCount = 0; let pageCount = 0;
+    let checkpointCommitted = false;
     const assertDeadline = () => { if (controller.signal.aborted || this.now() >= deadline) { controller.abort(); throw new Error("PILOT_EXECUTION_TIMEOUT"); } };
     try {
       let pageToken: string | undefined;
@@ -94,16 +95,23 @@ export class OneShotGoogleDrivePilotOrchestrator {
         assertDeadline();
         clearTimeout(timer);
         await commit();
+        checkpointCommitted = true;
       }
       const completedAt = new Date(this.now()).toISOString();
-      await this.executions.finish(id, { status: "SUCCEEDED", completedAt, failureClassification: undefined, discoveredCount, downloadedCount, pageCount });
+      await this.#finishCommittedSuccess(id, { status: "SUCCEEDED", completedAt, failureClassification: undefined, discoveredCount, downloadedCount, pageCount });
       return { ...base, status: "SUCCEEDED", completedAt, discoveredCount, downloadedCount, pageCount };
     } catch (error) {
+      if (checkpointCommitted) throw new Error("PILOT_TERMINAL_STATE_RECONCILIATION_REQUIRED", { cause: error });
       const timedOut = controller.signal.aborted || (error instanceof Error && error.message === "PILOT_EXECUTION_TIMEOUT");
       const completedAt = new Date(this.now()).toISOString(); const status = timedOut ? "ABORTED" : "FAILED";
       await this.executions.finish(id, { status, completedAt, failureClassification: timedOut ? "TIMEOUT" : "TERMINAL", discoveredCount, downloadedCount, pageCount });
       throw error;
     } finally { clearTimeout(timer); }
+  }
+  async #finishCommittedSuccess(id: string, update: Pick<PilotExecutionRecord, "status" | "completedAt" | "failureClassification" | "discoveredCount" | "downloadedCount" | "pageCount">): Promise<void> {
+    let failure: unknown;
+    for (let attempt = 0; attempt < 3; attempt++) try { await this.executions.finish(id, update); return; } catch (error) { failure = error; }
+    throw failure;
   }
   async #awaitDeadline<T>(operation: Promise<T>, signal: AbortSignal): Promise<T> { if (signal.aborted) throw new Error("PILOT_EXECUTION_TIMEOUT"); return new Promise<T>((resolve, reject) => { const aborted = () => reject(new Error("PILOT_EXECUTION_TIMEOUT")); signal.addEventListener("abort", aborted, { once: true }); operation.then(value => { signal.removeEventListener("abort", aborted); resolve(value); }, error => { signal.removeEventListener("abort", aborted); reject(error); }); }); }
   async #retry<T>(operation: () => Promise<T>, maximumAttempts: number, assertDeadline: () => void, signal: AbortSignal): Promise<T> { for (let attempt = 1; ; attempt++) { assertDeadline(); try { return await this.#awaitDeadline(operation(), signal); } catch (error) { if (error instanceof Error && error.message === "PILOT_EXECUTION_TIMEOUT") throw error; const retryable = error instanceof DriveSourceFetchError ? error.retryable : error instanceof GoogleDriveTransportError ? normalizeGoogleDriveError(error).retryable : false; if (!retryable || attempt >= maximumAttempts) throw error; } } }

@@ -212,6 +212,20 @@ enum DrivePilotExecutionStatus {
   ABORTED
 }
 
+enum ConnectedSourceProvider {
+  GOOGLE_DRIVE
+}
+
+enum ConnectedSourceHealth {
+  NOT_CONFIGURED
+  READY
+  SYNCING
+  UP_TO_DATE
+  REVIEW_REQUIRED
+  ERROR
+  DISCONNECTED
+}
+
 model Organization {
   id                  String                     @id @default(cuid())
   name                String
@@ -238,6 +252,7 @@ model Organization {
   collectionEvents    CollectionEvent[]
   promises            PromiseToPay[]
   reviewTasks         ReviewTask[]
+  connectedSources    ConnectedSource[]
   legalReviewFlags    LegalReviewFlag[]
   importSummaries     ImportBatchSummary[]
   invoiceCandidates   InvoiceImportCandidate[]
@@ -247,6 +262,30 @@ model Organization {
   communicationOutcomes   CommunicationSendOutcome[]
   communicationDeliveryEvents CommunicationDeliveryEvent[]
   communicationSafetyStates CommunicationExecutionSafetyState[]
+}
+
+model ConnectedSource {
+  id                       String                  @id @default(cuid())
+  organizationId           String
+  provider                 ConnectedSourceProvider
+  providerConnectionId     String
+  providerRootReference    String?
+  rootDisplayName          String?
+  rootConfirmedBy          String?
+  rootConfirmedAt          DateTime?
+  rootBoundaryVersion      Int                     @default(0)
+  health                   ConnectedSourceHealth   @default(NOT_CONFIGURED)
+  lastAttemptedSyncAt      DateTime?
+  lastSuccessfulSyncAt     DateTime?
+  committedDocumentCount   Int                     @default(0)
+  reviewRequiredCount      Int                     @default(0)
+  revision                 Int                     @default(1)
+  createdAt                DateTime                @default(now())
+  updatedAt                DateTime                @updatedAt
+  organization             Organization            @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, provider, providerConnectionId])
+  @@index([organizationId, health])
 }
 
 model Membership {
