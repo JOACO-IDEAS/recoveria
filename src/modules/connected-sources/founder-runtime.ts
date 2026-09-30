@@ -181,7 +181,7 @@ class FounderConnectedSourceRuntime {
       });
       const result = await composition.pilot.execute(this.configuration.activation, { operatorConfirmed: true, organizationId: ORGANIZATION_ID, connectionId: CONNECTION_ID, authorizedRootId: this.approvedRootId, configurationVersion: "6B.3-connected-source-v1" });
       const report = toSanitizedDriveCorpusReport(result.report);
-      const summary = { ...toFirstValueSummary({ report, exactDuplicates: result.report.summary.exactDuplicates, possibleDuplicates: result.report.summary.possibleDuplicates, detectedEntities: result.report.summary.identityClusters }), documentsDiscovered: report.filesDiscovered, documentsDownloaded: result.execution.downloadedCount, documentsUnderstood: report.invoicesUnderstood, documentsReused: report.reusedFiles, failures: report.failedFiles, checkpointVersion: result.checkpointVersion };
+      const summary = { ...toFirstValueSummary({ report, exactDuplicates: result.report.summary.exactDuplicates, possibleDuplicates: result.report.summary.possibleDuplicates, detectedEntities: result.report.summary.identityClusters }), documentsDiscovered: report.filesDiscovered, documentsDownloaded: result.execution.downloadedCount, documentsUnderstood: report.understoodFiles, documentsReused: report.reusedFiles, failures: report.failedFiles, checkpointVersion: result.checkpointVersion };
       this.#lastSummary = summary;
       return summary;
     } });

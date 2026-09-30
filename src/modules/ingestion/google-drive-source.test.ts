@@ -81,7 +81,7 @@ describe("production-shaped offline GoogleDriveSource", () => {
     client.put(record("a", pdf(1, 1), { locator: "root-a/moved/renamed.pdf", displayName: "renamed.pdf" })); client.put(record("b", pdf(22, 2))); client.put(record("c", pdf(3, 3))); const third = await processor.process(source, second.checkpoint);
     expect(third.report.metrics).toMatchObject({ documentsUnderstood: 2, documentsReused: 1 }); expect(third.report.changes).toEqual(expect.arrayContaining([expect.objectContaining({ sourceDocumentId: "a", kind: "LOCATOR_CHANGED" }), expect.objectContaining({ sourceDocumentId: "b", kind: "CONTENT_CHANGED" }), expect.objectContaining({ sourceDocumentId: "c", kind: "NEW" })]));
     client.remove("b"); const fourth = await processor.process(source, third.checkpoint); expect(fourth.report.changes).toContainEqual(expect.objectContaining({ sourceDocumentId: "b", kind: "REMOVED" })); expect(fourth.report.documents.map(({ source: item }) => item.sourceDocumentId)).not.toContain("b");
-    expect(toSanitizedDriveCorpusReport(fourth.report)).toEqual(expect.objectContaining({ filesDiscovered: 2, reusedFiles: 2, processingStatus: "COMPLETE" }));
+    expect(toSanitizedDriveCorpusReport(fourth.report)).toEqual(expect.objectContaining({ filesDiscovered: 2, reusedFiles: 2, understoodFiles: 0, invoicesUnderstood: 2, processingStatus: "COMPLETE" }));
   });
 
   it("preserves partial failures with sanitized error codes", async () => {

@@ -24,7 +24,7 @@ describe("connected-source product contracts", () => {
 
   it("builds first value only from documentary corpus facts", () => {
     const summary = toFirstValueSummary({
-      report: { processingStatus: "COMPLETE", filesDiscovered: 40, newFiles: 40, changedFiles: 0, reusedFiles: 0, unsupportedFiles: 0, failedFiles: 0, invoicesUnderstood: 40, reviewRequired: 7, contradictions: 0 },
+      report: { processingStatus: "COMPLETE", filesDiscovered: 40, newFiles: 40, changedFiles: 0, reusedFiles: 0, understoodFiles: 40, unsupportedFiles: 0, failedFiles: 0, invoicesUnderstood: 40, reviewRequired: 7, contradictions: 0 },
       exactDuplicates: 1,
       possibleDuplicates: 0,
       detectedEntities: 5,
