@@ -33,6 +33,12 @@ export interface ConnectedSourceSyncSummary {
   readonly possibleDuplicates: number;
   readonly detectedEntities: number;
   readonly reviewRequired: number;
+  readonly documentsDiscovered?: number;
+  readonly documentsDownloaded?: number;
+  readonly documentsUnderstood?: number;
+  readonly documentsReused?: number;
+  readonly failures?: number;
+  readonly checkpointVersion?: number;
 }
 
 export interface ConnectedSourceProductView {

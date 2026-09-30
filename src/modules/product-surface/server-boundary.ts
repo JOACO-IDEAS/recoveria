@@ -4,6 +4,7 @@ import { PrismaClient } from "@prisma/client";
 import type { ProductSurfaceEvidenceField, ProductSurfaceInvoiceFilters, ProductSurfaceScope } from "./types";
 import { PrismaProductSurfaceCheckpointReader } from "./prisma-checkpoint-reader";
 import { ProductSurfaceQueryService } from "./read-model";
+import { readCommittedPdfPreview } from "./document-preview";
 
 export type ProductSurfaceServerResult<T> =
   | { readonly status: 200; readonly data: T }
@@ -23,11 +24,15 @@ export function authorizeProductSurface(request: Request, expectedToken: string 
   return left.length === right.length && timingSafeEqual(left, right);
 }
 
-export function configuredProductSurfaceScope(): ProductSurfaceScope | null {
+export async function configuredProductSurfaceScope(database: Pick<PrismaClient, "connectedSource">): Promise<ProductSurfaceScope | null> {
   const organizationId = requiredEnvironment("RECOVERIA_PRODUCT_SURFACE_ORGANIZATION_ID");
-  const sourceId = requiredEnvironment("RECOVERIA_PRODUCT_SURFACE_SOURCE_ID");
-  const connectionId = requiredEnvironment("RECOVERIA_PRODUCT_SURFACE_CONNECTION_ID");
-  return organizationId && sourceId && connectionId ? { organizationId, sourceType: "GOOGLE_DRIVE", sourceId, connectionId } : null;
+  if (!organizationId) return null;
+  const source = await database.connectedSource.findFirst({
+    where: { organizationId, provider: "GOOGLE_DRIVE", providerRootReference: { not: null }, lastSuccessfulSyncAt: { not: null }, health: { not: "DISCONNECTED" } },
+    orderBy: { lastSuccessfulSyncAt: "desc" },
+    select: { organizationId: true, providerConnectionId: true },
+  });
+  return source ? { organizationId: source.organizationId, sourceType: "GOOGLE_DRIVE", sourceId: source.providerConnectionId, connectionId: source.providerConnectionId } : null;
 }
 
 export function parseInvoiceFilters(url: URL): ProductSurfaceInvoiceFilters | null {
@@ -63,21 +68,45 @@ export function parseEvidenceField(value: string | null): ProductSurfaceEvidence
 }
 
 let client: PrismaClient | undefined;
-export function productSurfaceService(): ProductSurfaceQueryService | null {
+function productSurfaceContext(): { client: PrismaClient; service: ProductSurfaceQueryService } | null {
   const databaseUrl = requiredEnvironment("RECOVERIA_PRODUCT_SURFACE_DATABASE_URL");
   if (!databaseUrl) return null;
   client ??= new PrismaClient({ adapter: new PrismaPg({ connectionString: databaseUrl, max: 3 }) });
-  return new ProductSurfaceQueryService(new PrismaProductSurfaceCheckpointReader(client));
+  return { client, service: new ProductSurfaceQueryService(new PrismaProductSurfaceCheckpointReader(client)) };
 }
 
 export async function executeProductSurfaceRead<T>(request: Request, operation: (service: ProductSurfaceQueryService, scope: ProductSurfaceScope) => Promise<T | null>): Promise<ProductSurfaceServerResult<T>> {
   if (!authorizeProductSurface(request)) return { status: 401, error: "UNAUTHORIZED" };
-  const scope = configuredProductSurfaceScope(); const service = productSurfaceService();
-  if (!scope || !service) return { status: 503, error: "NOT_CONFIGURED" };
-  const value = await operation(service, scope);
+  const context = productSurfaceContext();
+  if (!context) return { status: 503, error: "NOT_CONFIGURED" };
+  const scope = await configuredProductSurfaceScope(context.client);
+  if (!scope) return { status: 503, error: "NOT_CONFIGURED" };
+  const value = await operation(context.service, scope);
   return value === null ? { status: 404, error: "NOT_FOUND" } : { status: 200, data: value };
 }
 
 export function productSurfaceResponse<T>(result: ProductSurfaceServerResult<T>): Response {
   return Response.json(result.status === 200 ? { data: result.data } : { error: result.error }, { status: result.status, headers: { "cache-control": "private, no-store, max-age=0", "x-content-type-options": "nosniff" } });
+}
+
+export async function productSurfaceDocumentResponse(request: Request, documentId: string): Promise<Response> {
+  if (!authorizeProductSurface(request)) return productSurfaceResponse({ status: 401, error: "UNAUTHORIZED" });
+  const directory = requiredEnvironment("RECOVERIA_PRODUCT_SURFACE_DOCUMENT_DIRECTORY");
+  const context = productSurfaceContext();
+  if (!directory || !context) return productSurfaceResponse({ status: 503, error: "NOT_CONFIGURED" });
+  const scope = await configuredProductSurfaceScope(context.client);
+  if (!scope) return productSurfaceResponse({ status: 503, error: "NOT_CONFIGURED" });
+  const result = await readCommittedPdfPreview(new PrismaProductSurfaceCheckpointReader(context.client), scope, documentId, directory);
+  if (result.status !== 200) return Response.json({ error: result.error }, { status: result.status, headers: { "cache-control": "private, no-store, max-age=0", "x-content-type-options": "nosniff" } });
+  return productSurfacePdfResponse(result.bytes, result.displayName);
+}
+
+export function productSurfacePdfResponse(bytes: Uint8Array, displayName: string): Response {
+  return new Response(Uint8Array.from(bytes).buffer, { status: 200, headers: {
+    "content-type": "application/pdf",
+    "content-disposition": `inline; filename*=UTF-8''${encodeURIComponent(displayName)}`,
+    "cache-control": "private, no-store, max-age=0",
+    "x-content-type-options": "nosniff",
+    "content-security-policy": "default-src 'none'; frame-ancestors 'self'; sandbox",
+  } });
 }

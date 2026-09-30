@@ -143,7 +143,7 @@ function toInvoice(entry: SourceCheckpointEntry, intelligence: ReconstructedInte
   };
 }
 
-function assertBoundary(scope: ProductSurfaceScope, record: VersionedSourceCheckpoint): void {
+export function assertProductSurfaceBoundary(scope: ProductSurfaceScope, record: VersionedSourceCheckpoint): void {
   const checkpoint = record.checkpoint;
   if (record.connectionId !== scope.connectionId || checkpoint.organizationId !== scope.organizationId || checkpoint.sourceType !== scope.sourceType || checkpoint.sourceId !== scope.sourceId) throw new Error("PRODUCT_SURFACE_SCOPE_MISMATCH");
   for (const entry of checkpoint.entries) if (entry.parse.organizationId !== scope.organizationId || entry.source.provenance.sourceType !== scope.sourceType || entry.source.provenance.sourceId !== scope.sourceId || entry.source.provenance.sourceDocumentId !== entry.source.sourceDocumentId) throw new Error("PRODUCT_SURFACE_ENTRY_SCOPE_MISMATCH");
@@ -243,7 +243,7 @@ export class ProductSurfaceQueryService {
 
   async #load(scope: ProductSurfaceScope): Promise<VersionedSourceCheckpoint | null> {
     const loaded = await this.checkpoints.load(scope);
-    if (loaded) assertBoundary(scope, loaded);
+    if (loaded) assertProductSurfaceBoundary(scope, loaded);
     return loaded;
   }
 }

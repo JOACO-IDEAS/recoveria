@@ -20,6 +20,7 @@
     "pilot:google-drive:cloud-runtime": "tsx scripts/ingestion/run-google-drive-cloud-runtime.ts",
     "pilot:google-drive:oauth-initiate": "tsx scripts/ingestion/initiate-google-drive-oauth.ts",
     "product-surface:local": "tsx scripts/product-surface/run-local-integration.ts",
+    "product-surface:connected-founder": "tsx scripts/product-surface/run-connected-source-founder.ts",
     "smoke:email:controlled": "tsx scripts/communication/run-controlled-email-smoke-test.ts"
   },
   "dependencies": {
