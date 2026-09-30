@@ -42,9 +42,9 @@ export interface PilotExecutionRecord { readonly id: string; readonly organizati
 export interface PilotExecutionRepository { begin(record: PilotExecutionRecord): Promise<void>; finish(id: string, update: Pick<PilotExecutionRecord, "status" | "completedAt" | "failureClassification" | "discoveredCount" | "downloadedCount" | "pageCount">): Promise<void> }
 export class InMemoryPilotExecutionRepository implements PilotExecutionRepository { readonly records = new Map<string, PilotExecutionRecord>(); async begin(record: PilotExecutionRecord): Promise<void> { if ([...this.records.values()].some((item) => item.organizationId === record.organizationId && item.connectionId === record.connectionId && (item.status === "PENDING" || item.status === "RUNNING"))) throw new Error("PILOT_EXECUTION_ALREADY_ACTIVE"); this.records.set(record.id, { ...record, status: "RUNNING" }); } async finish(id: string, update: Pick<PilotExecutionRecord, "status" | "completedAt" | "failureClassification" | "discoveredCount" | "downloadedCount" | "pageCount">): Promise<void> { const prior = this.records.get(id); if (!prior) throw new Error("PILOT_EXECUTION_NOT_FOUND"); this.records.set(id, { ...prior, ...update }); } }
 export interface DurableCheckpointPort { available(): Promise<boolean>; load(key: SourceCheckpointKey, connectionId: string): Promise<{ version: number; checkpoint: SourceCheckpoint } | null>; save(key: SourceCheckpointKey, connectionId: string, checkpoint: SourceCheckpoint, expectedVersion: number | null): Promise<void> }
-export interface PilotPageDocument { readonly fileId: string; readonly rootId: string; readonly mimeType: string; readonly declaredBytes: number }
+export interface PilotPageDocument { readonly fileId: string; readonly rootId: string; readonly mimeType: string; readonly declaredBytes: number; readonly downloadRequired?: boolean }
 export interface PilotRuntimeDriver { listPage(input: { rootId: string; pageToken?: string; signal: AbortSignal }): Promise<{ documents: readonly PilotPageDocument[]; nextPageToken?: string }>; download(input: { fileId: string; maximumBytes: number; signal: AbortSignal }): Promise<Uint8Array> }
-export interface OneShotPilotInvocation { readonly operatorConfirmed: true; readonly organizationId: string; readonly connectionId: string; readonly authorizedRootId: string; readonly configurationVersion: string }
+export interface OneShotPilotInvocation { readonly operatorConfirmed: true; readonly organizationId: string; readonly connectionId: string; readonly authorizedRootId: string; readonly configurationVersion: string; readonly executionId?: string }
 export interface PilotCompletionContext { readonly executionId: string; readonly signal: AbortSignal; readonly discoveredCount: number; readonly downloadedCount: number; readonly pageCount: number }
 export type PilotCheckpointCommit = () => Promise<void>;
 export type PilotCompletionHook = (context: PilotCompletionContext) => Promise<PilotCheckpointCommit>;
@@ -55,7 +55,7 @@ export class OneShotGoogleDrivePilotOrchestrator {
     if (inspectPilotActivation(config, connection?.state ?? null).status !== "READY" || connection?.state !== "CONNECTED") throw new Error("GOOGLE_DRIVE_ACTIVATION_NOT_READY");
     if (invocation.operatorConfirmed !== true || invocation.organizationId !== config.organizationId || invocation.connectionId !== config.connectionId || invocation.authorizedRootId !== config.authorizedRootId) throw new Error("PILOT_EXECUTION_BINDING_MISMATCH");
     if (!(await this.checkpoints.available())) throw new Error("PILOT_CHECKPOINT_UNAVAILABLE");
-    const id = randomUUID(); const audit = typeof this.auditSource === "function" ? this.auditSource(id) : this.auditSource; const startedAtMs = this.now();
+    const id = invocation.executionId ?? randomUUID(); const audit = typeof this.auditSource === "function" ? this.auditSource(id) : this.auditSource; const startedAtMs = this.now();
     const base: PilotExecutionRecord = { id, organizationId: invocation.organizationId, connectionId: invocation.connectionId, authorizedRootId: invocation.authorizedRootId, status: "PENDING", configurationVersion: invocation.configurationVersion, startedAt: new Date(startedAtMs).toISOString(), discoveredCount: 0, downloadedCount: 0, pageCount: 0 };
     await this.executions.begin(base);
     const controller = new AbortController(); const deadline = startedAtMs + config.limits.maximumExecutionDurationMs;
@@ -75,6 +75,7 @@ export class OneShotGoogleDrivePilotOrchestrator {
           assertDeadline();
           if (document.rootId !== config.authorizedRootId) throw new Error("PILOT_ROOT_BINDING_VIOLATION");
           if (document.mimeType !== "application/pdf") continue;
+          if (document.downloadRequired === false) continue;
           if (document.declaredBytes > config.limits.maximumPdfBytes) throw new Error("PILOT_PDF_LIMIT_EXCEEDED");
           if (++downloadedCount > config.limits.hardMaximumDownloads || downloadedCount > anomalyLimit) throw new Error("PILOT_DOWNLOAD_LIMIT_EXCEEDED");
           const reference = digest(`${config.connectionId}\0${document.fileId}`);

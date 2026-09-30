@@ -15,6 +15,7 @@ export interface DiscoveredDocument {
   readonly mimeType: string;
   readonly size: number;
   readonly modifiedAt?: string;
+  readonly providerContentIdentity?: string;
   readonly supported: boolean;
   readonly provenance: SourceProvenance;
   readContent(): Promise<Uint8Array>;

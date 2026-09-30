@@ -6,8 +6,13 @@ export class DuplicateDetector {
   readonly #businessKeys = new Map<string, string>();
 
   inspect(document: DocumentInput, candidates: readonly InvoiceCandidate[]): DuplicateFinding[] {
-    const findings: DuplicateFinding[] = [];
     const hash = createHash("sha256").update(document.bytes).digest("hex");
+    return this.inspectFingerprint({ id: document.id, organizationId: document.organizationId, fingerprintSha256: hash }, candidates);
+  }
+
+  inspectFingerprint(document: { readonly id: string; readonly organizationId: string; readonly fingerprintSha256: string }, candidates: readonly InvoiceCandidate[]): DuplicateFinding[] {
+    const findings: DuplicateFinding[] = [];
+    const hash = document.fingerprintSha256;
     const hashKey = `${document.organizationId}:${hash}`;
     const exact = this.#documentHashes.get(hashKey);
     if (exact) findings.push({ documentId: document.id, kind: "EXACT_DOCUMENT_DUPLICATE", matchesDocumentId: exact, evidence: [`sha256:${hash}`] });

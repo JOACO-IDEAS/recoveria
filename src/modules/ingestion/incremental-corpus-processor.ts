@@ -106,6 +106,7 @@ function summarize(documents: readonly CorpusDocumentResult[], duplicateFindings
 
 export class IncrementalCorpusProcessor {
   constructor(private readonly provider: DocumentUnderstandingProvider) {}
+  get processingVersion(): string { return this.provider.processingVersion; }
 
   async process(source: DocumentSource, previous?: SourceCheckpoint, entityCatalog: readonly EntityCatalogEntry[] = []): Promise<IncrementalCorpusRun> {
     if (previous && (previous.organizationId !== source.organizationId || previous.sourceId !== source.sourceId || previous.sourceType !== source.sourceType)) throw new Error("CHECKPOINT_SOURCE_BOUNDARY_MISMATCH");
@@ -119,13 +120,16 @@ export class IncrementalCorpusProcessor {
     }
     const nextCursor = await this.#resolveAdvisoryCursor(source, previous?.cursor);
     const failures: CorpusProcessingFailure[] = [];
-    const loaded: Array<{ document: (typeof discovered)[number]; bytes: Uint8Array; fingerprint: string }> = [];
+    const priorById = new Map(previous?.entries.map((entry) => [entry.source.sourceDocumentId, entry]) ?? []);
+    const loaded: Array<{ document: (typeof discovered)[number]; bytes?: Uint8Array; fingerprint: string }> = [];
     for (const document of discovered) {
+      const prior = priorById.get(document.sourceDocumentId);
+      const metadataProvesUnchanged = Boolean(document.providerContentIdentity && prior?.source.providerContentIdentity === document.providerContentIdentity && prior.source.mimeType === document.mimeType && prior.source.size === document.size && prior.source.supported === document.supported && prior.processingVersion === this.provider.processingVersion && prior.processingOutcome !== "FAILED_RETRYABLE" && prior.processingOutcome !== "FAILED_TERMINAL");
+      if (metadataProvesUnchanged) { loaded.push({ document, fingerprint: prior!.source.fingerprintSha256 }); continue; }
       try { const bytes = await document.readContent(); loaded.push({ document, bytes, fingerprint: createHash("sha256").update(bytes).digest("hex") }); }
       catch (error) { failures.push({ kind: "CONTENT_FETCH_FAILURE", sourceDocumentId: document.sourceDocumentId, ...sourceError(error, "SOURCE_CONTENT_FETCH_FAILED") }); }
     }
     const corpusFingerprint = createHash("sha256").update(loaded.map(({ document, fingerprint }) => `${document.sourceDocumentId}:${fingerprint}`).sort().join("\n")).digest("hex");
-    const priorById = new Map(previous?.entries.map((entry) => [entry.source.sourceDocumentId, entry]) ?? []);
     const priorByFingerprint = new Map<string, SourceCheckpointEntry[]>();
     for (const entry of previous?.entries ?? []) priorByFingerprint.set(entry.source.fingerprintSha256, [...(priorByFingerprint.get(entry.source.fingerprintSha256) ?? []), entry]);
     const changes: SourceChange[] = [];
@@ -152,7 +156,7 @@ export class IncrementalCorpusProcessor {
     const parsed = new Map<string, DocumentParseResult>();
     if (toUnderstand.length) {
       try {
-        const result = await this.provider.understand({ organizationId: source.organizationId, idempotencyKey: `incremental:${source.sourceType}:${source.sourceId}:${corpusFingerprint}`, documents: toUnderstand.map(({ document, bytes }) => ({ id: document.sourceDocumentId, organizationId: source.organizationId, fileName: document.displayName, declaredMediaType: document.mimeType, bytes })), entityCatalog });
+        const result = await this.provider.understand({ organizationId: source.organizationId, idempotencyKey: `incremental:${source.sourceType}:${source.sourceId}:${corpusFingerprint}`, documents: toUnderstand.map(({ document, bytes }) => ({ id: document.sourceDocumentId, organizationId: source.organizationId, fileName: document.displayName, declaredMediaType: document.mimeType, bytes: bytes! })), entityCatalog });
         for (const parse of result.results) { parsed.set(parse.documentId, parse); if (parse.status === "FAILED") failures.push({ kind: "UNDERSTANDING_FAILURE", sourceDocumentId: parse.documentId, retryable: parse.errorCode !== "MALFORMED_DOCUMENT", code: parse.errorCode ?? "DOCUMENT_UNDERSTANDING_FAILED" }); }
       } catch { for (const { document } of toUnderstand) failures.push({ kind: "UNDERSTANDING_FAILURE", sourceDocumentId: document.sourceDocumentId, retryable: true, code: "PROVIDER_BATCH_FAILED" }); }
     }
@@ -162,8 +166,8 @@ export class IncrementalCorpusProcessor {
     for (const item of loaded) {
       const prior = reused.get(item.document.sourceDocumentId); const parse = prior?.parse ?? parsed.get(item.document.sourceDocumentId);
       if (!parse) continue;
-      const sourceRecord: CorpusSourceRecord = { sourceDocumentId: item.document.sourceDocumentId, displayName: item.document.displayName, mimeType: item.document.mimeType, size: item.document.size, modifiedAt: item.document.modifiedAt, fingerprintSha256: item.fingerprint, supported: item.document.supported, provenance: item.document.provenance };
-      documents.push({ source: sourceRecord, classification: classifyCorpusDocument(parse.understanding), parse }); duplicateFindings.push(...duplicateDetector.inspect({ id: item.document.sourceDocumentId, organizationId: source.organizationId, fileName: item.document.displayName, declaredMediaType: item.document.mimeType, bytes: item.bytes }, parse.candidates));
+      const sourceRecord: CorpusSourceRecord = { sourceDocumentId: item.document.sourceDocumentId, displayName: item.document.displayName, mimeType: item.document.mimeType, size: item.document.size, modifiedAt: item.document.modifiedAt, providerContentIdentity: item.document.providerContentIdentity, fingerprintSha256: item.fingerprint, supported: item.document.supported, provenance: item.document.provenance };
+      documents.push({ source: sourceRecord, classification: classifyCorpusDocument(parse.understanding), parse }); duplicateFindings.push(...duplicateDetector.inspectFingerprint({ id: item.document.sourceDocumentId, organizationId: source.organizationId, fingerprintSha256: item.fingerprint }, parse.candidates));
       checkpointEntries.push({ source: sourceRecord, parse, processingOutcome: outcomeFor(parse), processingVersion: this.provider.processingVersion, lastObservedRevision: corpusFingerprint });
     }
     // A transient fetch failure does not erase the last trusted result. It is

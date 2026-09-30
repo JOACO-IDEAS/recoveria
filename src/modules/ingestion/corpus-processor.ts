@@ -16,6 +16,7 @@ export interface CorpusSourceRecord {
   readonly mimeType: string;
   readonly size: number;
   readonly modifiedAt?: string;
+  readonly providerContentIdentity?: string;
   readonly fingerprintSha256: string;
   readonly supported: boolean;
   readonly provenance: SourceProvenance;

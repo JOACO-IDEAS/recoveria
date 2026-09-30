@@ -1,5 +1,5 @@
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
   previewFeatures = ["driverAdapters"]
 }
 
@@ -226,66 +226,96 @@ enum ConnectedSourceHealth {
   DISCONNECTED
 }
 
+enum ConnectedSourceSyncIntentStatus {
+  RUNNING
+  SUCCEEDED
+  FAILED
+}
+
 model Organization {
-  id                  String                     @id @default(cuid())
-  name                String
-  createdAt           DateTime                   @default(now())
-  updatedAt           DateTime                   @updatedAt
-  memberships         Membership[]
-  parties             Party[]
-  buildings           Building[]
-  contacts            Contact[]
-  contactPoints       ContactPoint[]
-  contactAssociations ContactAssociation[]
-  administrationLinks AdministrationBuilding[]
-  importBatches       ImportBatch[]
-  sourceDocuments     SourceDocument[]
-  extractionResults   ExtractionResult[]
-  extractedFields     ExtractedField[]
-  resolutionEvidence  EntityResolutionEvidence[]
-  resolutionDecisions EntityResolutionDecision[]
-  invoices            Invoice[]
-  receivables         Receivable[]
-  ledgerEntries       ReceivableLedgerEntry[]
-  collectionCases     CollectionCase[]
-  caseReceivables     CollectionCaseReceivable[]
-  collectionEvents    CollectionEvent[]
-  promises            PromiseToPay[]
-  reviewTasks         ReviewTask[]
-  connectedSources    ConnectedSource[]
-  legalReviewFlags    LegalReviewFlag[]
-  importSummaries     ImportBatchSummary[]
-  invoiceCandidates   InvoiceImportCandidate[]
-  duplicateFindings   DuplicateFinding[]
-  communicationExecutions CommunicationExecution[]
-  communicationAttempts   CommunicationSendAttempt[]
-  communicationOutcomes   CommunicationSendOutcome[]
+  id                          String                              @id @default(cuid())
+  name                        String
+  createdAt                   DateTime                            @default(now())
+  updatedAt                   DateTime                            @updatedAt
+  memberships                 Membership[]
+  parties                     Party[]
+  buildings                   Building[]
+  contacts                    Contact[]
+  contactPoints               ContactPoint[]
+  contactAssociations         ContactAssociation[]
+  administrationLinks         AdministrationBuilding[]
+  importBatches               ImportBatch[]
+  sourceDocuments             SourceDocument[]
+  extractionResults           ExtractionResult[]
+  extractedFields             ExtractedField[]
+  resolutionEvidence          EntityResolutionEvidence[]
+  resolutionDecisions         EntityResolutionDecision[]
+  invoices                    Invoice[]
+  receivables                 Receivable[]
+  ledgerEntries               ReceivableLedgerEntry[]
+  collectionCases             CollectionCase[]
+  caseReceivables             CollectionCaseReceivable[]
+  collectionEvents            CollectionEvent[]
+  promises                    PromiseToPay[]
+  reviewTasks                 ReviewTask[]
+  connectedSources            ConnectedSource[]
+  connectedSourceSyncIntents  ConnectedSourceSyncIntent[]
+  legalReviewFlags            LegalReviewFlag[]
+  importSummaries             ImportBatchSummary[]
+  invoiceCandidates           InvoiceImportCandidate[]
+  duplicateFindings           DuplicateFinding[]
+  communicationExecutions     CommunicationExecution[]
+  communicationAttempts       CommunicationSendAttempt[]
+  communicationOutcomes       CommunicationSendOutcome[]
   communicationDeliveryEvents CommunicationDeliveryEvent[]
-  communicationSafetyStates CommunicationExecutionSafetyState[]
+  communicationSafetyStates   CommunicationExecutionSafetyState[]
 }
 
 model ConnectedSource {
-  id                       String                  @id @default(cuid())
-  organizationId           String
-  provider                 ConnectedSourceProvider
-  providerConnectionId     String
-  providerRootReference    String?
-  rootDisplayName          String?
-  rootConfirmedBy          String?
-  rootConfirmedAt          DateTime?
-  rootBoundaryVersion      Int                     @default(0)
-  health                   ConnectedSourceHealth   @default(NOT_CONFIGURED)
-  lastAttemptedSyncAt      DateTime?
-  lastSuccessfulSyncAt     DateTime?
-  committedDocumentCount   Int                     @default(0)
-  reviewRequiredCount      Int                     @default(0)
-  revision                 Int                     @default(1)
-  createdAt                DateTime                @default(now())
-  updatedAt                DateTime                @updatedAt
-  organization             Organization            @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  id                     String                      @id @default(cuid())
+  organizationId         String
+  provider               ConnectedSourceProvider
+  providerConnectionId   String
+  providerRootReference  String?
+  rootDisplayName        String?
+  rootConfirmedBy        String?
+  rootConfirmedAt        DateTime?
+  rootBoundaryVersion    Int                         @default(0)
+  health                 ConnectedSourceHealth       @default(NOT_CONFIGURED)
+  lastAttemptedSyncAt    DateTime?
+  lastSuccessfulSyncAt   DateTime?
+  committedDocumentCount Int                         @default(0)
+  reviewRequiredCount    Int                         @default(0)
+  revision               Int                         @default(1)
+  createdAt              DateTime                    @default(now())
+  updatedAt              DateTime                    @updatedAt
+  organization           Organization                @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  syncIntents            ConnectedSourceSyncIntent[]
 
   @@unique([organizationId, provider, providerConnectionId])
   @@index([organizationId, health])
+}
+
+model ConnectedSourceSyncIntent {
+  id                 String                          @id @default(cuid())
+  organizationId     String
+  connectedSourceId  String
+  syncIntentId       String
+  actorId            String
+  sessionBindingHash String
+  status             ConnectedSourceSyncIntentStatus @default(RUNNING)
+  executionId        String
+  summary            Json?
+  failureCode        String?
+  createdAt          DateTime                        @default(now())
+  completedAt        DateTime?
+  updatedAt          DateTime                        @updatedAt
+  organization       Organization                    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  connectedSource    ConnectedSource                 @relation(fields: [connectedSourceId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, connectedSourceId, syncIntentId])
+  @@unique([organizationId, syncIntentId])
+  @@index([organizationId, connectedSourceId, status])
 }
 
 model Membership {
@@ -663,22 +693,22 @@ model ReceivableLedgerEntry {
 }
 
 model CollectionCase {
-  id              String                     @id @default(cuid())
-  organizationId  String
-  partyId         String?
-  buildingId      String?
-  currency        String                     @db.Char(3)
-  status          CollectionCaseStatus       @default(OPEN)
-  openedAt        DateTime
-  organization    Organization               @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  party           Party?                     @relation(fields: [partyId], references: [id], onDelete: Restrict)
-  building        Building?                  @relation(fields: [buildingId], references: [id], onDelete: Restrict)
-  receivableLinks CollectionCaseReceivable[]
-  events          CollectionEvent[]
-  promises        PromiseToPay[]
-  reviewTasks     ReviewTask[]
-  legalFlags      LegalReviewFlag[]
-  communicationExecutions CommunicationExecution[]
+  id                        String                              @id @default(cuid())
+  organizationId            String
+  partyId                   String?
+  buildingId                String?
+  currency                  String                              @db.Char(3)
+  status                    CollectionCaseStatus                @default(OPEN)
+  openedAt                  DateTime
+  organization              Organization                        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  party                     Party?                              @relation(fields: [partyId], references: [id], onDelete: Restrict)
+  building                  Building?                           @relation(fields: [buildingId], references: [id], onDelete: Restrict)
+  receivableLinks           CollectionCaseReceivable[]
+  events                    CollectionEvent[]
+  promises                  PromiseToPay[]
+  reviewTasks               ReviewTask[]
+  legalFlags                LegalReviewFlag[]
+  communicationExecutions   CommunicationExecution[]
   communicationSafetyStates CommunicationExecutionSafetyState[]
 
   @@unique([organizationId, id])
@@ -735,18 +765,18 @@ model CommunicationExecutionSafetyState {
 }
 
 model CommunicationSendAttempt {
-  id                   String                    @id
+  id                   String                       @id
   organizationId       String
   executionId          String
   attemptNumber        Int
-  state                CommunicationAttemptState @default(ATTEMPTING)
+  state                CommunicationAttemptState    @default(ATTEMPTING)
   providerId           String?
   providerRequestKey   String
   startedAt            DateTime
   fingerprintAtAttempt String
   evidenceRefs         String[]
-  organization         Organization              @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  execution            CommunicationExecution    @relation(fields: [organizationId, executionId], references: [organizationId, id], onDelete: Restrict)
+  organization         Organization                 @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  execution            CommunicationExecution       @relation(fields: [organizationId, executionId], references: [organizationId, id], onDelete: Restrict)
   outcome              CommunicationSendOutcome?
   deliveryEvents       CommunicationDeliveryEvent[]
 
@@ -757,15 +787,15 @@ model CommunicationSendAttempt {
 }
 
 model CommunicationSendOutcome {
-  id             String                     @id
-  organizationId String
-  attemptId      String                     @unique
-  status         CommunicationOutcomeStatus
-  occurredAt     DateTime
-  reasonCode     String
+  id                String                     @id
+  organizationId    String
+  attemptId         String                     @unique
+  status            CommunicationOutcomeStatus
+  occurredAt        DateTime
+  reasonCode        String
   providerMessageId String?
-  organization   Organization               @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  attempt        CommunicationSendAttempt   @relation(fields: [organizationId, attemptId], references: [organizationId, id], onDelete: Restrict)
+  organization      Organization               @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  attempt           CommunicationSendAttempt   @relation(fields: [organizationId, attemptId], references: [organizationId, id], onDelete: Restrict)
 
   @@unique([organizationId, attemptId])
   @@unique([organizationId, providerMessageId])
@@ -881,16 +911,16 @@ model LegalReviewFlag {
 }
 
 model DriveOAuthState {
-  stateHash       String   @id
+  stateHash      String    @id
   organizationId String
   operatorId     String
   connectionId   String
-  nonceHash       String
-  callbackUrl     String
-  schemaVersion  Int      @default(1)
-  createdAt       DateTime @default(now())
-  expiresAt       DateTime
-  consumedAt      DateTime?
+  nonceHash      String
+  callbackUrl    String
+  schemaVersion  Int       @default(1)
+  createdAt      DateTime  @default(now())
+  expiresAt      DateTime
+  consumedAt     DateTime?
 
   @@index([organizationId, connectionId, expiresAt])
 }
@@ -899,8 +929,8 @@ model DriveConnectionState {
   organizationId String
   connectionId   String
   state          DriveConnectionLifecycleState @default(DISCONNECTED)
-  revision       Int      @default(1)
-  updatedAt      DateTime @updatedAt
+  revision       Int                           @default(1)
+  updatedAt      DateTime                      @updatedAt
 
   @@id([organizationId, connectionId])
   @@index([organizationId, state])
@@ -910,13 +940,13 @@ model DriveCredentialEnvelope {
   organizationId             String
   connectionId               String
   encryptedRefreshCredential Bytes
-  keyId                       String
-  keyVersion                  String
-  grantedScopes               String[]
-  providerSubject             String
-  revision                    Int      @default(1)
-  createdAt                   DateTime @default(now())
-  updatedAt                   DateTime @updatedAt
+  keyId                      String
+  keyVersion                 String
+  grantedScopes              String[]
+  providerSubject            String
+  revision                   Int      @default(1)
+  createdAt                  DateTime @default(now())
+  updatedAt                  DateTime @updatedAt
 
   @@id([organizationId, connectionId])
 }
@@ -927,34 +957,34 @@ model DriveSecurityAuditEvent {
   connectionId          String
   executionId           String
   documentReference     String
-  eventType              String
-  operation              String
-  outcome                String
+  eventType             String
+  operation             String
+  outcome               String
   failureClassification String?
-  rootProof              String
-  occurredAt             DateTime
-  createdAt              DateTime @default(now())
+  rootProof             String
+  occurredAt            DateTime
+  createdAt             DateTime @default(now())
 
   @@index([organizationId, connectionId, executionId, occurredAt])
   @@index([organizationId, outcome, occurredAt])
 }
 
 model DriveSourceCheckpoint {
-  organizationId String
-  sourceType     String
-  sourceId       String
-  connectionId   String
+  organizationId    String
+  sourceType        String
+  sourceId          String
+  connectionId      String
   processingVersion String
-  checkpoint     Json
-  version        Int      @default(1)
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  checkpoint        Json
+  version           Int      @default(1)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
   @@id([organizationId, sourceType, sourceId, connectionId])
 }
 
 model DrivePilotExecution {
-  id                    String   @id
+  id                    String                    @id
   organizationId        String
   connectionId          String
   authorizedRootId      String
@@ -963,11 +993,11 @@ model DrivePilotExecution {
   startedAt             DateTime?
   completedAt           DateTime?
   failureClassification String?
-  discoveredCount       Int      @default(0)
-  downloadedCount       Int      @default(0)
-  pageCount             Int      @default(0)
-  createdAt             DateTime @default(now())
-  updatedAt             DateTime @updatedAt
+  discoveredCount       Int                       @default(0)
+  downloadedCount       Int                       @default(0)
+  pageCount             Int                       @default(0)
+  createdAt             DateTime                  @default(now())
+  updatedAt             DateTime                  @updatedAt
 
   @@index([organizationId, connectionId, status])
   @@index([organizationId, createdAt])

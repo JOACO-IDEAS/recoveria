@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type { ConnectedSourceSyncSummary } from "./product-contract";
 
 export type SourceHealth = "NOT_CONFIGURED" | "READY" | "SYNCING" | "UP_TO_DATE" | "REVIEW_REQUIRED" | "ERROR" | "DISCONNECTED";
@@ -48,7 +48,18 @@ export class InMemoryFolderCandidateRepository implements FolderCandidateReposit
 }
 
 export interface GoogleFolderValidator { validate(input: { organizationId: string; connectionId: string; untrustedFolderId: string }): Promise<{ providerRootReference: string; safeDisplayName: string; mimeType: "application/vnd.google-apps.folder"; trashed: false; location: "MY_DRIVE" }> }
-export interface ConnectedSourceSyncEngine { execute(input: { organizationId: string; connectionId: string; providerRootReference: string; rootBoundaryVersion: number; actorId: string }): Promise<ConnectedSourceSyncSummary> }
+export interface ConnectedSourceSyncEngine { execute(input: { organizationId: string; connectionId: string; providerRootReference: string; rootBoundaryVersion: number; actorId: string; executionId: string }): Promise<ConnectedSourceSyncSummary> }
+
+export type SyncIntentStatus = "RUNNING" | "SUCCEEDED" | "FAILED";
+export interface SyncIntentRecord { readonly organizationId: string; readonly connectedSourceId: string; readonly syncIntentId: string; readonly actorId: string; readonly sessionBindingHash: string; readonly executionId: string; readonly status: SyncIntentStatus; readonly summary?: ConnectedSourceSyncSummary; readonly failureCode?: string }
+export interface SyncIntentRepository { claim(record: SyncIntentRecord): Promise<{ created: boolean; record: SyncIntentRecord }>; complete(input: { organizationId: string; connectedSourceId: string; syncIntentId: string; status: "SUCCEEDED" | "FAILED"; summary?: ConnectedSourceSyncSummary; failureCode?: string }): Promise<SyncIntentRecord> }
+export class InMemorySyncIntentRepository implements SyncIntentRepository {
+  readonly records = new Map<string, SyncIntentRecord>();
+  #key(input: Pick<SyncIntentRecord, "organizationId" | "connectedSourceId" | "syncIntentId">): string { return `${input.organizationId}\0${input.connectedSourceId}\0${input.syncIntentId}`; }
+  async claim(record: SyncIntentRecord): Promise<{ created: boolean; record: SyncIntentRecord }> { const key = this.#key(record); const prior = this.records.get(key) ?? [...this.records.values()].find(item => item.organizationId === record.organizationId && item.syncIntentId === record.syncIntentId); if (prior) return { created: false, record: prior }; this.records.set(key, record); return { created: true, record }; }
+  async complete(input: { organizationId: string; connectedSourceId: string; syncIntentId: string; status: "SUCCEEDED" | "FAILED"; summary?: ConnectedSourceSyncSummary; failureCode?: string }): Promise<SyncIntentRecord> { const key = this.#key(input); const prior = this.records.get(key); if (!prior || prior.status !== "RUNNING") throw new Error("CONNECTED_SOURCE_SYNC_INTENT_STATE_CONFLICT"); const completed = { ...prior, ...input }; this.records.set(key, completed); return completed; }
+}
+export type SyncIntentOutcome = { readonly status: SyncIntentStatus; readonly executionId: string; readonly summary?: ConnectedSourceSyncSummary; readonly replay: boolean };
 
 export interface ProductActor { readonly organizationId: string; readonly actorId: string; readonly sessionId: string; readonly csrfToken: string }
 export function authorizeMutation(actor: ProductActor, input: { organizationId: string; csrfToken: string }): void {
@@ -57,8 +68,7 @@ export function authorizeMutation(actor: ProductActor, input: { organizationId: 
 }
 
 export class ConnectedSourceService {
-  readonly #active = new Map<string, Promise<ConnectedSourceSyncSummary>>();
-  constructor(private readonly sources: ConnectedSourceRepository, private readonly candidates: FolderCandidateRepository, private readonly folders: GoogleFolderValidator, private readonly syncEngine: ConnectedSourceSyncEngine, private readonly now: () => Date = () => new Date()) {}
+  constructor(private readonly sources: ConnectedSourceRepository, private readonly candidates: FolderCandidateRepository, private readonly folders: GoogleFolderValidator, private readonly syncEngine: ConnectedSourceSyncEngine, private readonly now: () => Date = () => new Date(), private readonly intents: SyncIntentRepository = new InMemorySyncIntentRepository()) {}
 
   async ensureConnection(organizationId: string, connectionId: string): Promise<ConnectedSourceRecord> {
     const existing = await this.sources.findByConnection(organizationId, connectionId);
@@ -83,13 +93,25 @@ export class ConnectedSourceService {
     return this.sources.save({ ...source, providerRootReference: candidate.providerRootReference, rootDisplayName: candidate.safeDisplayName, rootConfirmedBy: actor.actorId, rootConfirmedAt: this.now().toISOString(), rootBoundaryVersion: source.rootBoundaryVersion + 1, health: "READY", lastAttemptedSyncAt: undefined, lastSuccessfulSyncAt: undefined, committedDocumentCount: 0, reviewRequiredCount: 0 }, source.revision);
   }
 
-  async sync(actor: ProductActor, input: { connectedSourceId: string; csrfToken: string }): Promise<ConnectedSourceSyncSummary> {
+  async sync(actor: ProductActor, input: { connectedSourceId: string; csrfToken: string; syncIntentId: string }): Promise<SyncIntentOutcome> {
     authorizeMutation(actor, { organizationId: actor.organizationId, csrfToken: input.csrfToken });
-    const key = `${actor.organizationId}\0${input.connectedSourceId}`;
-    const active = this.#active.get(key); if (active) return active;
-    const operation = this.#execute(actor, input.connectedSourceId).finally(() => this.#active.delete(key));
-    this.#active.set(key, operation);
-    return operation;
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(input.syncIntentId)) throw new Error("CONNECTED_SOURCE_SYNC_INTENT_INVALID");
+    await this.#require(actor.organizationId, input.connectedSourceId);
+    const sessionBindingHash = createHash("sha256").update(actor.sessionId).digest("hex");
+    const claimed = await this.intents.claim({ organizationId: actor.organizationId, connectedSourceId: input.connectedSourceId, syncIntentId: input.syncIntentId, actorId: actor.actorId, sessionBindingHash, executionId: randomUUID(), status: "RUNNING" });
+    if (!claimed.created) {
+      if (claimed.record.connectedSourceId !== input.connectedSourceId || claimed.record.actorId !== actor.actorId || claimed.record.sessionBindingHash !== sessionBindingHash) throw new Error("CONNECTED_SOURCE_SYNC_INTENT_BINDING_MISMATCH");
+      return { status: claimed.record.status, executionId: claimed.record.executionId, summary: claimed.record.summary, replay: true };
+    }
+    try {
+      const summary = await this.#execute(actor, input.connectedSourceId, claimed.record.executionId);
+      await this.intents.complete({ organizationId: actor.organizationId, connectedSourceId: input.connectedSourceId, syncIntentId: input.syncIntentId, status: "SUCCEEDED", summary });
+      return { status: "SUCCEEDED", executionId: claimed.record.executionId, summary, replay: false };
+    } catch (error) {
+      const failureCode = error instanceof Error && /^[A-Z0-9_]+$/.test(error.message) ? error.message : "CONNECTED_SOURCE_SYNC_FAILED";
+      await this.intents.complete({ organizationId: actor.organizationId, connectedSourceId: input.connectedSourceId, syncIntentId: input.syncIntentId, status: "FAILED", failureCode });
+      throw error;
+    }
   }
 
   async disconnect(actor: ProductActor, input: { connectedSourceId: string; csrfToken: string }): Promise<ConnectedSourceRecord> {
@@ -100,13 +122,13 @@ export class ConnectedSourceService {
 
   productView(source: ConnectedSourceRecord): Omit<ConnectedSourceRecord, "providerRootReference"> { const { providerRootReference: _, ...safe } = source; void _; return safe; }
   async #require(organizationId: string, id: string): Promise<ConnectedSourceRecord> { const source = await this.sources.find(organizationId, id); if (!source) throw new Error("CONNECTED_SOURCE_NOT_FOUND"); return source; }
-  async #execute(actor: ProductActor, id: string): Promise<ConnectedSourceSyncSummary> {
+  async #execute(actor: ProductActor, id: string, executionId: string): Promise<ConnectedSourceSyncSummary> {
     let source = await this.#require(actor.organizationId, id);
     if (!source.providerRootReference || source.health === "DISCONNECTED") throw new Error("CONNECTED_SOURCE_NOT_READY");
     const providerRootReference = source.providerRootReference;
     source = await this.sources.save({ ...source, health: "SYNCING", lastAttemptedSyncAt: this.now().toISOString() }, source.revision);
     try {
-      const result = await this.syncEngine.execute({ organizationId: source.organizationId, connectionId: source.providerConnectionId, providerRootReference, rootBoundaryVersion: source.rootBoundaryVersion, actorId: actor.actorId });
+      const result = await this.syncEngine.execute({ organizationId: source.organizationId, connectionId: source.providerConnectionId, providerRootReference, rootBoundaryVersion: source.rootBoundaryVersion, actorId: actor.actorId, executionId });
       await this.sources.save({ ...source, health: result.reviewRequired ? "REVIEW_REQUIRED" : "UP_TO_DATE", lastSuccessfulSyncAt: this.now().toISOString(), committedDocumentCount: result.documentsAnalyzed, reviewRequiredCount: result.reviewRequired }, source.revision);
       return result;
     } catch (error) {

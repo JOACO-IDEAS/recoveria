@@ -26,7 +26,7 @@ import {
   PrismaDrivePilotExecutionRepository,
 } from "@/modules/ingestion/google-drive-prisma-runtime";
 import { toFirstValueSummary, type ConnectedSourceSyncSummary } from "./product-contract";
-import { PrismaConnectedSourceRepository } from "./prisma-repository";
+import { PrismaConnectedSourceRepository, PrismaSyncIntentRepository } from "./prisma-repository";
 import {
   ConnectedSourceService,
   InMemoryFolderCandidateRepository,
@@ -179,12 +179,12 @@ class FounderConnectedSourceRuntime {
         understandingProvider: new DeterministicDocumentUnderstandingProvider(),
         checkpoints: new PrismaDriveCheckpointRepository(this.prisma),
       });
-      const result = await composition.pilot.execute(this.configuration.activation, { operatorConfirmed: true, organizationId: ORGANIZATION_ID, connectionId: CONNECTION_ID, authorizedRootId: this.approvedRootId, configurationVersion: "6B.3-connected-source-v1" });
+      const result = await composition.pilot.execute(this.configuration.activation, { operatorConfirmed: true, organizationId: ORGANIZATION_ID, connectionId: CONNECTION_ID, authorizedRootId: this.approvedRootId, configurationVersion: "6B.3-connected-source-v1", executionId: input.executionId });
       const report = toSanitizedDriveCorpusReport(result.report);
       const summary = { ...toFirstValueSummary({ report, exactDuplicates: result.report.summary.exactDuplicates, possibleDuplicates: result.report.summary.possibleDuplicates, detectedEntities: result.report.summary.identityClusters }), documentsDiscovered: report.filesDiscovered, documentsDownloaded: result.execution.downloadedCount, documentsUnderstood: report.understoodFiles, documentsReused: report.reusedFiles, failures: report.failedFiles, checkpointVersion: result.checkpointVersion };
       this.#lastSummary = summary;
       return summary;
-    } });
+    } }, () => new Date(), new PrismaSyncIntentRepository(this.prisma));
   }
 
   async initialize() {

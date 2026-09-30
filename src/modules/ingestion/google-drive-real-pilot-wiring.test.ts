@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { createHash } from "node:crypto";
 import { InMemoryConnectionLifecycleRepository, parsePilotActivationConfiguration } from "./google-drive-activation";
 import { GOOGLE_DRIVE_READONLY_SCOPE, type DownloadSecurityEvent } from "./google-drive-pilot-infrastructure";
 import { InMemoryPilotExecutionRepository, OneShotGoogleDrivePilotOrchestrator, type DurableCheckpointPort } from "./google-drive-durable-runtime";
@@ -14,7 +15,7 @@ import { buildSyntheticDrivePilotCorpus, changedSyntheticDrivePilotFile } from "
 const configuration = () => parsePilotActivationConfiguration({ ACTIVATION_ENABLED: "true", GOOGLE_CLIENT_ID: "synthetic-client", GOOGLE_CLIENT_SECRET_REFERENCE: "projects/p/secrets/oauth/versions/1", EXACT_CALLBACK_URL: "https://pilot.example.test/oauth/callback", REQUIRED_SCOPE: GOOGLE_DRIVE_READONLY_SCOPE, ORGANIZATION_ID: "org", CONNECTION_ID: "connection", AUTHORIZED_ROOT_ID: "root", EXPECTED_CORPUS_SIZE: "40", HARD_MAXIMUM_DOWNLOADS: "50", MAXIMUM_EXPANSION_RATIO: "1.25", MAXIMUM_PDF_BYTES: "26214400", MAXIMUM_PAGES: "10", MAXIMUM_RETRY_ATTEMPTS: "3", MAXIMUM_EXECUTION_DURATION_MS: "300000", AUDIT_PERSISTENCE_CONFIGURED: "true", CREDENTIAL_VAULT_CONFIGURED: "true", CHECKPOINT_PERSISTENCE_CONFIGURED: "true", OAUTH_PROVIDER_CONFIGURED: "true", ENCRYPTION_CONFIGURED: "true" });
 const invocation = { operatorConfirmed: true as const, organizationId: "org", connectionId: "connection", authorizedRootId: "root", configurationVersion: "test-v1" };
 const root = { id: "root", name: "Root", mimeType: "application/vnd.google-apps.folder", parents: [] as string[], trashed: false };
-const pdfMetadata = (id: string, bytes: Uint8Array, parents = ["root"], name = `${id}.pdf`) => ({ id, name, mimeType: "application/pdf", size: String(bytes.byteLength), modifiedTime: "2026-09-20T00:00:00Z", parents, trashed: false });
+const pdfMetadata = (id: string, bytes: Uint8Array, parents = ["root"], name = `${id}.pdf`) => ({ id, name, mimeType: "application/pdf", size: String(bytes.byteLength), modifiedTime: "2026-09-20T00:00:00Z", sha256Checksum: createHash("sha256").update(bytes).digest("hex"), parents, trashed: false });
 function invoicePdf(number: number): Uint8Array { const lines = ["FACTURA B", `Nro: 0007-${String(number).padStart(8, "0")}`, "Fecha: 15/07/2026", "CUIT: 30-70000000-1", `Razon Social: Consorcio ${number % 6}`, `CUIT: 30-${String(80_000_000 + number % 6).padStart(8, "0")}-1`, "Moneda: Peso", `TOTAL ${100000 + number}.00`]; const commands = lines.map((line, index) => `BT /F1 10 Tf 40 ${800 - index * 22} Td (${line}) Tj ET`).join("\n"); const objects = ["<< /Type /Catalog /Pages 2 0 R >>", "<< /Type /Pages /Kids [3 0 R] /Count 1 >>", "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 600 840] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>", `<< /Length ${Buffer.byteLength(commands)} >>\nstream\n${commands}\nendstream`, "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"]; let value = "%PDF-1.4\n"; const offsets = [0]; objects.forEach((body, index) => { offsets.push(Buffer.byteLength(value)); value += `${index + 1} 0 obj\n${body}\nendobj\n`; }); const xref = Buffer.byteLength(value); value += `xref\n0 6\n0000000000 65535 f \n${offsets.slice(1).map(offset => `${String(offset).padStart(10, "0")} 00000 n \n`).join("")}trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`; return new TextEncoder().encode(value); }
 
 class FakeTransport implements GoogleDriveTransport {
@@ -62,12 +63,15 @@ describe("real Google Drive pilot wiring", () => {
     expect(first.report.metrics).toMatchObject({ documentsDiscovered: 40, documentsUnderstood: 40, documentsReused: 0 });
     expect(first.report.summary).toMatchObject({ documentsClassifiedAsInvoice: 40, exactDuplicates: 1, identityClusters: 5, unresolvedIdentities: 0, relationshipProposals: 248, contradictions: 0, incompleteCoreDocuments: 0 });
     expect(state.checkpoints.version).toBe(1);
+    expect(transport.downloads).toBe(40);
 
     transport.replace(runOne);
     const unchanged = await state.service.execute(configuration(), invocation);
     expect(unchanged.report.metrics).toMatchObject({ documentsDiscovered: 40, documentsUnderstood: 0, documentsReused: 40 });
     expect(unchanged.report.changes.every(change => change.kind === "UNCHANGED")).toBe(true);
     expect(state.checkpoints.version).toBe(2);
+    expect(unchanged.execution.downloadedCount).toBe(0);
+    expect(transport.downloads).toBe(40);
 
     const changed = changedSyntheticDrivePilotFile(corpus[10]!);
     transport.replace([
@@ -81,9 +85,19 @@ describe("real Google Drive pilot wiring", () => {
     expect(incremental.report.changes.find(change => change.sourceDocumentId === corpus[0]!.id)?.kind).toBe("UNCHANGED");
     expect(understood).toEqual([40, 2]);
     expect(state.checkpoints.version).toBe(3);
+    expect(incremental.execution.downloadedCount).toBe(2);
+    expect(transport.downloads).toBe(42);
     expect(state.auditExecutionIds).toEqual([first.execution.id, unchanged.execution.id, incremental.execution.id]);
     expect(state.events[0]?.outcome).toBe("STARTED");
     expect(state.events[1]?.outcome).toBe("SUCCEEDED");
+  });
+
+  it("fails safe to content retrieval when provider content identity is unavailable", async () => {
+    const transport = new FakeTransport(); const bytes = invoicePdf(1); transport.replace([{ id: "file", bytes }]); const state = harness(transport);
+    await state.service.execute(configuration(), invocation); expect(transport.downloads).toBe(1);
+    transport.replace([{ id: "file", bytes }]); transport.files = transport.files.map(file => ({ ...file, sha256Checksum: undefined, headRevisionId: undefined })); transport.metadata.set("file", transport.files[0]!);
+    const second = await state.service.execute(configuration(), invocation);
+    expect(second.execution.downloadedCount).toBe(1); expect(second.report.metrics).toMatchObject({ documentsUnderstood: 0, documentsReused: 1 }); expect(transport.downloads).toBe(2);
   });
 
   it("does not advance the prior checkpoint on audit, processing, or CAS failure", async () => { for (const failure of ["audit", "processing", "cas"] as const) { const transport = new FakeTransport(); transport.replace([{ id: "file", bytes: invoicePdf(1) }]); const checkpoints = new MemoryCheckpoints(); const initial = harness(transport, checkpoints); await initial.service.execute(configuration(), invocation); const version = checkpoints.version; transport.replace([{ id: "file", bytes: invoicePdf(2) }]); const provider = failure === "processing" ? { id: "failing", processingVersion: "v2", async understand() { throw new Error("PROVIDER_FAILED"); } } : new DeterministicDocumentUnderstandingProvider(); checkpoints.failSave = failure === "cas"; await expect(harness(transport, checkpoints, provider, failure === "audit").service.execute(configuration(), invocation)).rejects.toBeDefined(); expect(checkpoints.version).toBe(version); } });

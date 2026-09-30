@@ -6,7 +6,8 @@ export async function POST(request: Request) {
   try {
     const session = founderSession(request); assertCsrf(request, session);
     const runtime = founderRuntime(); const source = await runtime.initialize();
-    const summary = await runtime.service.sync(session, { connectedSourceId: source.id, csrfToken: session.csrfToken });
-    return corsJson({ summary, ...(await runtime.status()) });
+    const syncIntentId = request.headers.get("X-Sync-Intent-Id") ?? "";
+    const outcome = await runtime.service.sync(session, { connectedSourceId: source.id, csrfToken: session.csrfToken, syncIntentId });
+    return corsJson({ outcome, summary: outcome.summary, ...(await runtime.status()) }, outcome.status === "RUNNING" ? 202 : 200);
   } catch (error) { return corsJson({ error: sanitizedRuntimeError(error) }, 409); }
 }
