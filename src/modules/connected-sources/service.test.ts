@@ -50,8 +50,9 @@ describe("ConnectedSourceService offline product flow", () => {
     const sources = new InMemoryConnectedSourceRepository(); let calls = 0; const intents = new InMemorySyncIntentRepository();
     const service = new ConnectedSourceService(sources, new InMemoryFolderCandidateRepository(), { async validate() { return { providerRootReference: "verified", safeDisplayName: "Facturas", mimeType: "application/vnd.google-apps.folder", trashed: false, location: "MY_DRIVE" }; } }, { async execute() { calls += 1; throw new Error("SYNTHETIC_FAILURE"); } }, () => new Date(), intents);
     const source = await service.ensureConnection("org", "connection"); const candidate = await service.validateFolder(actor, { connectedSourceId: source.id, csrfToken: "csrf", untrustedFolderId: "candidate" }); await service.confirmFolder(actor, { connectedSourceId: source.id, candidateId: candidate.candidateId, csrfToken: "csrf" }); const syncIntentId = "77777777-7777-4777-8777-777777777777";
-    await expect(service.sync(actor, { connectedSourceId: source.id, csrfToken: "csrf", syncIntentId })).rejects.toThrow("SYNTHETIC_FAILURE");
-    await expect(service.sync(actor, { connectedSourceId: source.id, csrfToken: "csrf", syncIntentId })).resolves.toMatchObject({ status: "FAILED", replay: true }); expect(calls).toBe(1);
+    await expect(service.sync(actor, { connectedSourceId: source.id, csrfToken: "csrf", syncIntentId })).resolves.toMatchObject({ status: "FAILED", failureCode: "SYNTHETIC_FAILURE", replay: false });
+    await expect(service.sync(actor, { connectedSourceId: source.id, csrfToken: "csrf", syncIntentId })).resolves.toMatchObject({ status: "FAILED", failureCode: "SYNTHETIC_FAILURE", replay: true });
+    await expect(service.sync(actor, { connectedSourceId: source.id, csrfToken: "csrf", syncIntentId: "88888888-8888-4888-8888-888888888888" })).resolves.toMatchObject({ status: "FAILED", replay: false }); expect(calls).toBe(2);
   });
 
   it("changes root as a new boundary, preserves prior value until fresh sync, and disconnect requires reconfirmation", async () => {
@@ -63,7 +64,7 @@ describe("ConnectedSourceService offline product flow", () => {
     const second = await service.validateFolder(actor, { connectedSourceId: source.id, csrfToken: "csrf", untrustedFolderId: "b" }); const changed = await service.confirmFolder(actor, { connectedSourceId: source.id, candidateId: second.candidateId, csrfToken: "csrf" });
     expect(changed).toMatchObject({ rootBoundaryVersion: 2, committedDocumentCount: 0, health: "READY" });
     const disconnected = await service.disconnect(actor, { connectedSourceId: source.id, csrfToken: "csrf" }); expect(disconnected.health).toBe("DISCONNECTED"); expect(disconnected.providerRootReference).toBeUndefined();
-    await expect(service.sync(actor, { connectedSourceId: source.id, csrfToken: "csrf", syncIntentId: "33333333-3333-4333-8333-333333333333" })).rejects.toThrow("CONNECTED_SOURCE_NOT_READY");
+    await expect(service.sync(actor, { connectedSourceId: source.id, csrfToken: "csrf", syncIntentId: "33333333-3333-4333-8333-333333333333" })).resolves.toMatchObject({ status: "FAILED", failureCode: "CONNECTED_SOURCE_NOT_READY" });
   });
 
   it("enforces tenant and CSRF boundaries and creates a memory-only Picker bootstrap", async () => {
@@ -76,7 +77,7 @@ describe("ConnectedSourceService offline product flow", () => {
     const sources = new InMemoryConnectedSourceRepository(); const candidates = new InMemoryFolderCandidateRepository();
     const service = new ConnectedSourceService(sources, candidates, { async validate() { return { providerRootReference: "verified", safeDisplayName: "Facturas", mimeType: "application/vnd.google-apps.folder", trashed: false, location: "MY_DRIVE" }; } }, { async execute() { throw new Error("PILOT_TERMINAL_STATE_RECONCILIATION_REQUIRED"); } });
     const source = await service.ensureConnection("org", "connection"); const candidate = await service.validateFolder(actor, { connectedSourceId: source.id, csrfToken: "csrf", untrustedFolderId: "candidate" }); await service.confirmFolder(actor, { connectedSourceId: source.id, candidateId: candidate.candidateId, csrfToken: "csrf" });
-    await expect(service.sync(actor, { connectedSourceId: source.id, csrfToken: "csrf", syncIntentId: "44444444-4444-4444-8444-444444444444" })).rejects.toThrow("PILOT_TERMINAL_STATE_RECONCILIATION_REQUIRED");
+    await expect(service.sync(actor, { connectedSourceId: source.id, csrfToken: "csrf", syncIntentId: "44444444-4444-4444-8444-444444444444" })).resolves.toMatchObject({ status: "FAILED", failureCode: "PILOT_TERMINAL_STATE_RECONCILIATION_REQUIRED" });
     expect((await sources.find("org", source.id))?.health).toBe("SYNCING");
   });
 });

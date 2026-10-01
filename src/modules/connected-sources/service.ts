@@ -59,7 +59,7 @@ export class InMemorySyncIntentRepository implements SyncIntentRepository {
   async claim(record: SyncIntentRecord): Promise<{ created: boolean; record: SyncIntentRecord }> { const key = this.#key(record); const prior = this.records.get(key) ?? [...this.records.values()].find(item => item.organizationId === record.organizationId && item.syncIntentId === record.syncIntentId); if (prior) return { created: false, record: prior }; this.records.set(key, record); return { created: true, record }; }
   async complete(input: { organizationId: string; connectedSourceId: string; syncIntentId: string; status: "SUCCEEDED" | "FAILED"; summary?: ConnectedSourceSyncSummary; failureCode?: string }): Promise<SyncIntentRecord> { const key = this.#key(input); const prior = this.records.get(key); if (!prior || prior.status !== "RUNNING") throw new Error("CONNECTED_SOURCE_SYNC_INTENT_STATE_CONFLICT"); const completed = { ...prior, ...input }; this.records.set(key, completed); return completed; }
 }
-export type SyncIntentOutcome = { readonly status: SyncIntentStatus; readonly executionId: string; readonly summary?: ConnectedSourceSyncSummary; readonly replay: boolean };
+export type SyncIntentOutcome = { readonly status: SyncIntentStatus; readonly executionId: string; readonly summary?: ConnectedSourceSyncSummary; readonly failureCode?: string; readonly replay: boolean };
 
 export interface ProductActor { readonly organizationId: string; readonly actorId: string; readonly sessionId: string; readonly csrfToken: string }
 export function authorizeMutation(actor: ProductActor, input: { organizationId: string; csrfToken: string }): void {
@@ -101,7 +101,7 @@ export class ConnectedSourceService {
     const claimed = await this.intents.claim({ organizationId: actor.organizationId, connectedSourceId: input.connectedSourceId, syncIntentId: input.syncIntentId, actorId: actor.actorId, sessionBindingHash, executionId: randomUUID(), status: "RUNNING" });
     if (!claimed.created) {
       if (claimed.record.connectedSourceId !== input.connectedSourceId || claimed.record.actorId !== actor.actorId || claimed.record.sessionBindingHash !== sessionBindingHash) throw new Error("CONNECTED_SOURCE_SYNC_INTENT_BINDING_MISMATCH");
-      return { status: claimed.record.status, executionId: claimed.record.executionId, summary: claimed.record.summary, replay: true };
+      return { status: claimed.record.status, executionId: claimed.record.executionId, summary: claimed.record.summary, failureCode: claimed.record.failureCode, replay: true };
     }
     try {
       const summary = await this.#execute(actor, input.connectedSourceId, claimed.record.executionId);
@@ -109,8 +109,8 @@ export class ConnectedSourceService {
       return { status: "SUCCEEDED", executionId: claimed.record.executionId, summary, replay: false };
     } catch (error) {
       const failureCode = error instanceof Error && /^[A-Z0-9_]+$/.test(error.message) ? error.message : "CONNECTED_SOURCE_SYNC_FAILED";
-      await this.intents.complete({ organizationId: actor.organizationId, connectedSourceId: input.connectedSourceId, syncIntentId: input.syncIntentId, status: "FAILED", failureCode });
-      throw error;
+      const failed = await this.intents.complete({ organizationId: actor.organizationId, connectedSourceId: input.connectedSourceId, syncIntentId: input.syncIntentId, status: "FAILED", failureCode });
+      return { status: "FAILED", executionId: failed.executionId, failureCode, replay: false };
     }
   }
 

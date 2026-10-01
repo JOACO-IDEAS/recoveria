@@ -47,7 +47,7 @@ const required = (name: string): string => {
   return value;
 };
 
-interface SessionRecord extends ProductActor { readonly expiresAt: number }
+interface SessionRecord extends ProductActor { readonly browserBindingId: string; readonly expiresAt: number }
 interface DriveFolderMetadata { readonly id?: string; readonly name?: string; readonly mimeType?: string; readonly trashed?: boolean; readonly driveId?: string }
 
 const sessions = new Map<string, SessionRecord>();
@@ -212,9 +212,17 @@ export function founderRuntime(): FounderConnectedSourceRuntime { return runtime
 
 export function issueFounderSession(): SessionRecord {
   const sessionId = randomBytes(32).toString("base64url");
-  const session = { organizationId: ORGANIZATION_ID, actorId: ACTOR_ID, sessionId, csrfToken: randomBytes(32).toString("base64url"), expiresAt: Date.now() + SESSION_MS };
+  const session = { organizationId: ORGANIZATION_ID, actorId: ACTOR_ID, sessionId, csrfToken: randomBytes(32).toString("base64url"), browserBindingId: randomBytes(16).toString("base64url"), expiresAt: Date.now() + SESSION_MS };
   sessions.set(sessionId, session);
   return session;
+}
+
+export function resolveFounderSession(request: Request): { session: SessionRecord; created: boolean } {
+  try { return { session: founderSession(request), created: false }; }
+  catch (error) {
+    if (!(error instanceof Error) || error.message !== "CONNECTED_SOURCE_SESSION_REQUIRED") throw error;
+    return { session: issueFounderSession(), created: true };
+  }
 }
 
 export function founderSession(request: Request): SessionRecord {
