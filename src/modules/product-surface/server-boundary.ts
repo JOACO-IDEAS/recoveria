@@ -1,10 +1,10 @@
-import { timingSafeEqual } from "node:crypto";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "@prisma/client";
 import type { ProductSurfaceEvidenceField, ProductSurfaceInvoiceFilters, ProductSurfaceScope } from "./types";
 import { PrismaProductSurfaceCheckpointReader } from "./prisma-checkpoint-reader";
 import { ProductSurfaceQueryService } from "./read-model";
 import { readCommittedPdfPreview } from "./document-preview";
+import { founderSession } from "@/modules/connected-sources/founder-runtime";
 
 export type ProductSurfaceServerResult<T> =
   | { readonly status: 200; readonly data: T }
@@ -15,13 +15,6 @@ const evidenceFields = new Set<ProductSurfaceEvidenceField>(["invoiceNumber", "i
 function requiredEnvironment(name: string): string | null {
   const value = process.env[name]?.trim();
   return value || null;
-}
-
-export function authorizeProductSurface(request: Request, expectedToken: string | null = requiredEnvironment("RECOVERIA_PRODUCT_SURFACE_API_TOKEN")): boolean {
-  const supplied = request.headers.get("authorization")?.match(/^Bearer ([A-Za-z0-9_-]{32,})$/)?.[1];
-  if (!expectedToken || !supplied) return false;
-  const left = Buffer.from(supplied); const right = Buffer.from(expectedToken);
-  return left.length === right.length && timingSafeEqual(left, right);
 }
 
 export async function configuredProductSurfaceScope(database: Pick<PrismaClient, "connectedSource">): Promise<ProductSurfaceScope | null> {
@@ -76,11 +69,12 @@ function productSurfaceContext(): { client: PrismaClient; service: ProductSurfac
 }
 
 export async function executeProductSurfaceRead<T>(request: Request, operation: (service: ProductSurfaceQueryService, scope: ProductSurfaceScope) => Promise<T | null>): Promise<ProductSurfaceServerResult<T>> {
-  if (!authorizeProductSurface(request)) return { status: 401, error: "UNAUTHORIZED" };
+  let principal; try { principal = await founderSession(request); } catch { return { status: 401, error: "UNAUTHORIZED" }; }
   const context = productSurfaceContext();
   if (!context) return { status: 503, error: "NOT_CONFIGURED" };
   const scope = await configuredProductSurfaceScope(context.client);
   if (!scope) return { status: 503, error: "NOT_CONFIGURED" };
+  if (scope.organizationId !== principal.organizationId) return { status: 401, error: "UNAUTHORIZED" };
   const value = await operation(context.service, scope);
   return value === null ? { status: 404, error: "NOT_FOUND" } : { status: 200, data: value };
 }
@@ -90,12 +84,13 @@ export function productSurfaceResponse<T>(result: ProductSurfaceServerResult<T>)
 }
 
 export async function productSurfaceDocumentResponse(request: Request, documentId: string): Promise<Response> {
-  if (!authorizeProductSurface(request)) return productSurfaceResponse({ status: 401, error: "UNAUTHORIZED" });
+  let principal; try { principal = await founderSession(request); } catch { return productSurfaceResponse({ status: 401, error: "UNAUTHORIZED" }); }
   const directory = requiredEnvironment("RECOVERIA_PRODUCT_SURFACE_DOCUMENT_DIRECTORY");
   const context = productSurfaceContext();
   if (!directory || !context) return productSurfaceResponse({ status: 503, error: "NOT_CONFIGURED" });
   const scope = await configuredProductSurfaceScope(context.client);
   if (!scope) return productSurfaceResponse({ status: 503, error: "NOT_CONFIGURED" });
+  if (scope.organizationId !== principal.organizationId) return productSurfaceResponse({ status: 401, error: "UNAUTHORIZED" });
   const result = await readCommittedPdfPreview(new PrismaProductSurfaceCheckpointReader(context.client), scope, documentId, directory);
   if (result.status !== 200) return Response.json({ error: result.error }, { status: result.status, headers: { "cache-control": "private, no-store, max-age=0", "x-content-type-options": "nosniff" } });
   return productSurfacePdfResponse(result.bytes, result.displayName);

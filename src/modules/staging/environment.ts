@@ -14,6 +14,15 @@ const stagingSchema = z.object({
   RECOVERIA_TASK_QUEUE: z.string().min(1),
   RECOVERIA_SESSION_KEY: z.string().min(43),
   RECOVERIA_FOUNDER_EMAILS: z.string().min(3),
+  RECOVERIA_EXTERNAL_IDENTITY_ISSUER: z.literal("https://accounts.google.com"),
+  RECOVERIA_EXTERNAL_IDENTITY_CLIENT_ID: z.string().min(10),
+  RECOVERIA_WIF_PROVIDER: z.string().startsWith("//iam.googleapis.com/projects/"),
+  RECOVERIA_WIF_SERVICE_ACCOUNT: z.string().email(),
+  RECOVERIA_VERCEL_OIDC_ISSUER: z.string().url().startsWith("https://oidc.vercel.com/"),
+  RECOVERIA_VERCEL_OIDC_AUDIENCE: z.string().url().startsWith("https://vercel.com/"),
+  RECOVERIA_VERCEL_OIDC_SUBJECT: z.string().min(20),
+  RECOVERIA_DURABLE_SESSIONS: z.literal("prisma"),
+  RECOVERIA_FOLDER_CANDIDATES: z.literal("prisma"),
 });
 
 export type StagingEnvironment = z.infer<typeof stagingSchema> & { readonly founderEmails: readonly string[] };

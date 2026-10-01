@@ -1,27 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { founderCookie, issueFounderSession, resolveFounderSession } from "./founder-runtime";
-
+import { FounderSessionService, InMemoryStagingSessionRepository } from "../staging/auth";
 describe("founder connected-source session lifecycle", () => {
-  it("reuses the same live browser session instead of rotating its intent binding", () => {
-    const first = issueFounderSession();
-    const request = new Request("http://127.0.0.1:3100/api/connected-sources/session", {
-      headers: { cookie: founderCookie(first).split(";")[0]! },
-    });
-
-    const resolved = resolveFounderSession(request);
-
-    expect(resolved.created).toBe(false);
-    expect(resolved.session.sessionId).toBe(first.sessionId);
-    expect(resolved.session.browserBindingId).toBe(first.browserBindingId);
-    expect(resolved.session.csrfToken).toBe(first.csrfToken);
-  });
-
-  it("creates a new browser binding only when no valid server session exists", () => {
-    const resolved = resolveFounderSession(new Request("http://127.0.0.1:3100/api/connected-sources/session"));
-
-    expect(resolved.created).toBe(true);
-    expect(resolved.session.browserBindingId).toMatch(/^[A-Za-z0-9_-]+$/);
-    expect(resolved.session.sessionId).toMatch(/^[A-Za-z0-9_-]+$/);
-    expect(resolved.session.browserBindingId).not.toBe(resolved.session.sessionId);
-  });
+  it("never bootstraps an anonymous authenticated session", async () => { const auth = new FounderSessionService(new InMemoryStagingSessionRepository(), "s".repeat(43), ["founder@example.test"]); await expect(auth.authenticate(undefined)).rejects.toThrow("FOUNDER_SESSION_REQUIRED"); });
+  it("uses a durable, revocable binding after verified issuance", async () => { const auth = new FounderSessionService(new InMemoryStagingSessionRepository(), "s".repeat(43), ["founder@example.test"]); const issued = await auth.issue({ actorId: "founder", organizationId: "org", email: "founder@example.test" }); await expect(auth.authenticate(issued.cookie)).resolves.toMatchObject({ actorId: "founder", organizationId: "org" }); await auth.logout(issued.cookie); await expect(auth.authenticate(issued.cookie)).rejects.toThrow("FOUNDER_SESSION_INVALID"); });
 });

@@ -1,4 +1,3 @@
-import { randomBytes } from "node:crypto";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "@prisma/client";
 import {
@@ -29,17 +28,16 @@ import { toFirstValueSummary, type ConnectedSourceSyncSummary } from "./product-
 import { PrismaConnectedSourceRepository, PrismaSyncIntentRepository } from "./prisma-repository";
 import {
   ConnectedSourceService,
-  InMemoryFolderCandidateRepository,
   createGooglePickerBootstrap,
   type GoogleFolderValidator,
   type ProductActor,
 } from "./service";
+import { PrismaFolderCandidateRepository } from "./prisma-folder-candidate";
+import { STAGING_SESSION_COOKIE } from "@/modules/staging/auth";
+import { stagingAuthRuntime } from "@/modules/staging/runtime-auth";
 
 const ORGANIZATION_ID = "recoveria-synthetic-pilot";
 const CONNECTION_ID = "google-drive-pilot";
-const ACTOR_ID = "founder-operator";
-const SESSION_COOKIE = "recoveria_founder_session";
-const SESSION_MS = 60 * 60_000;
 
 const required = (name: string): string => {
   const value = process.env[name]?.trim();
@@ -47,10 +45,7 @@ const required = (name: string): string => {
   return value;
 };
 
-interface SessionRecord extends ProductActor { readonly browserBindingId: string; readonly expiresAt: number }
 interface DriveFolderMetadata { readonly id?: string; readonly name?: string; readonly mimeType?: string; readonly trashed?: boolean; readonly driveId?: string }
-
-const sessions = new Map<string, SessionRecord>();
 
 function safeError(error: unknown): string {
   const message = error instanceof Error ? error.message : "CONNECTED_SOURCE_OPERATION_FAILED";
@@ -151,7 +146,7 @@ class FounderConnectedSourceRuntime {
       CHECKPOINT_PERSISTENCE_CONFIGURED: "true",
       OAUTH_PROVIDER_CONFIGURED: "true",
       ENCRYPTION_CONFIGURED: "true",
-      OPERATOR_ID: ACTOR_ID,
+      OPERATOR_ID: required("RECOVERIA_FOUNDER_ACTOR_ID"),
       CALLBACK_PATH: "/oauth/google/callback",
       KMS_RESOURCE: kmsResource,
     });
@@ -163,8 +158,8 @@ class FounderConnectedSourceRuntime {
       if (metadata.id !== this.approvedRootId || metadata.mimeType !== "application/vnd.google-apps.folder" || metadata.trashed !== false || metadata.driveId || !metadata.name) throw new Error("CONNECTED_SOURCE_FOLDER_VALIDATION_FAILED");
       return { providerRootReference: this.approvedRootId, safeDisplayName: metadata.name.slice(0, 120), mimeType: "application/vnd.google-apps.folder", trashed: false, location: "MY_DRIVE" };
     } };
-    this.service = new ConnectedSourceService(this.sources, new InMemoryFolderCandidateRepository(), folderValidator, { execute: async input => {
-      if (input.organizationId !== ORGANIZATION_ID || input.connectionId !== CONNECTION_ID || input.providerRootReference !== this.approvedRootId || input.rootBoundaryVersion < 1 || input.actorId !== ACTOR_ID) throw new Error("CONNECTED_SOURCE_SYNC_BINDING_REJECTED");
+    this.service = new ConnectedSourceService(this.sources, new PrismaFolderCandidateRepository(this.prisma, CONNECTION_ID), folderValidator, { execute: async input => {
+      if (input.organizationId !== ORGANIZATION_ID || input.connectionId !== CONNECTION_ID || input.providerRootReference !== this.approvedRootId || input.rootBoundaryVersion < 1 || input.actorId !== required("RECOVERIA_FOUNDER_ACTOR_ID")) throw new Error("CONNECTED_SOURCE_SYNC_BINDING_REJECTED");
       const envelope = await this.credentials.load(ORGANIZATION_ID, CONNECTION_ID);
       if (!envelope || envelope.grantedScopes.length !== 1 || envelope.grantedScopes[0] !== GOOGLE_DRIVE_READONLY_SCOPE) throw new Error("CONNECTED_SOURCE_SCOPE_REJECTED");
       const composition = composeRealGoogleDrivePilot({
@@ -209,33 +204,7 @@ class FounderConnectedSourceRuntime {
 
 let runtime: FounderConnectedSourceRuntime | undefined;
 export function founderRuntime(): FounderConnectedSourceRuntime { return runtime ??= new FounderConnectedSourceRuntime(); }
-
-export function issueFounderSession(): SessionRecord {
-  const sessionId = randomBytes(32).toString("base64url");
-  const session = { organizationId: ORGANIZATION_ID, actorId: ACTOR_ID, sessionId, csrfToken: randomBytes(32).toString("base64url"), browserBindingId: randomBytes(16).toString("base64url"), expiresAt: Date.now() + SESSION_MS };
-  sessions.set(sessionId, session);
-  return session;
-}
-
-export function resolveFounderSession(request: Request): { session: SessionRecord; created: boolean } {
-  try { return { session: founderSession(request), created: false }; }
-  catch (error) {
-    if (!(error instanceof Error) || error.message !== "CONNECTED_SOURCE_SESSION_REQUIRED") throw error;
-    return { session: issueFounderSession(), created: true };
-  }
-}
-
-export function founderSession(request: Request): SessionRecord {
-  const cookie = request.headers.get("cookie")?.split(";").map(value => value.trim()).find(value => value.startsWith(`${SESSION_COOKIE}=`));
-  const id = cookie?.slice(SESSION_COOKIE.length + 1);
-  const session = id ? sessions.get(id) : undefined;
-  if (!session || session.expiresAt <= Date.now()) throw new Error("CONNECTED_SOURCE_SESSION_REQUIRED");
-  return session;
-}
-
-export function assertCsrf(request: Request, session: SessionRecord): void {
-  if (request.headers.get("x-csrf-token") !== session.csrfToken) throw new Error("CONNECTED_SOURCE_CSRF_REJECTED");
-}
-
-export function founderCookie(session: SessionRecord): string { return `${SESSION_COOKIE}=${session.sessionId}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${Math.floor(SESSION_MS / 1000)}`; }
+function cookieValue(request: Request): string | undefined { return request.headers.get("x-recoveria-browser-session") ?? request.headers.get("cookie")?.split(";").map(value => value.trim()).find(value => value.startsWith(`${STAGING_SESSION_COOKIE}=`))?.slice(STAGING_SESSION_COOKIE.length + 1); }
+export async function founderSession(request: Request): Promise<ProductActor> { const auth = stagingAuthRuntime(); const session = await auth.sessions.authenticate(cookieValue(request)); if (!(await auth.memberships.active(session.organizationId, session.actorId))) throw new Error("FOUNDER_MEMBERSHIP_REQUIRED"); return { organizationId: session.organizationId, actorId: session.actorId, sessionId: session.sid, csrfToken: session.csrf }; }
+export async function assertCsrf(request: Request, session: ProductActor): Promise<void> { const auth = stagingAuthRuntime(); const authenticated = await auth.sessions.authenticate(cookieValue(request)); if (authenticated.sid !== session.sessionId) throw new Error("FOUNDER_SESSION_BINDING_MISMATCH"); auth.sessions.assertCsrf(authenticated, request.headers.get("x-csrf-token")); }
 export function sanitizedRuntimeError(error: unknown): string { return safeError(error); }

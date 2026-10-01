@@ -1,0 +1,2 @@
+import { stagingAuthRuntime, stagingCookie } from "@/modules/staging/runtime-auth";
+export async function GET(request: Request) { try { const session = await stagingAuthRuntime().sessions.authenticate(stagingCookie(request)); return Response.json({ actorId: session.actorId, organizationId: session.organizationId, email: session.email, csrfToken: session.csrf, expiresAt: new Date(session.exp).toISOString() }, { headers: { "cache-control": "no-store" } }); } catch { return Response.json({ error: "AUTH_REQUIRED" }, { status: 401 }); } }

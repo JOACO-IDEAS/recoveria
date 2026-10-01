@@ -1,0 +1,9 @@
+import { createPublicKey, verify } from "node:crypto";
+import type { ExternalIdentityVerifier, VerifiedFounderIdentity } from "./identity";
+const decode = (value: string) => JSON.parse(Buffer.from(value, "base64url").toString()) as Record<string, unknown>;
+export class GoogleIdTokenVerifier implements ExternalIdentityVerifier {
+  constructor(private readonly clientId: string, private readonly fetcher: typeof fetch = fetch, private readonly now: () => number = Date.now) {}
+  async verify(assertion: string): Promise<VerifiedFounderIdentity> {
+    try { const parts = assertion.split("."); if (parts.length !== 3) throw new Error(); const header = decode(parts[0]); const payload = decode(parts[1]); if (header.alg !== "RS256" || typeof header.kid !== "string") throw new Error(); const response = await this.fetcher("https://www.googleapis.com/oauth2/v3/certs", { cache: "no-store", signal: AbortSignal.timeout(5000) }); if (!response.ok) throw new Error(); const body = await response.json() as { keys?: Array<Record<string, unknown>> }; const jwk = body.keys?.find(key => key.kid === header.kid && key.kty === "RSA" && key.use === "sig"); if (!jwk || !verify("RSA-SHA256", Buffer.from(`${parts[0]}.${parts[1]}`), createPublicKey({ key: jwk as import("node:crypto").JsonWebKey, format: "jwk" }), Buffer.from(parts[2], "base64url"))) throw new Error(); if (payload.iss !== "https://accounts.google.com" || payload.aud !== this.clientId || payload.email_verified !== true || typeof payload.sub !== "string" || typeof payload.email !== "string" || typeof payload.exp !== "number" || payload.exp * 1000 <= this.now()) throw new Error(); return { issuer: payload.iss, audience: payload.aud, subject: payload.sub, email: payload.email, emailVerified: true }; } catch { throw new Error("FOUNDER_IDENTITY_INVALID"); }
+  }
+}

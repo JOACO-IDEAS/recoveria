@@ -1,0 +1,15 @@
+export interface WifConfiguration { issuer: string; externalAudience: string; subject: string; workloadIdentityProvider: string; serviceAccount: string; cloudRunAudience: string }
+export interface HttpLike { (url: string, init: RequestInit): Promise<Response> }
+const claims = (jwt: string): Record<string, unknown> => { try { const parts = jwt.split("."); if (parts.length !== 3) throw new Error(); return JSON.parse(Buffer.from(parts[1], "base64url").toString()) as Record<string, unknown>; } catch { throw new Error("WIF_ASSERTION_INVALID"); } };
+export class VercelWifCloudRunIdentityProvider {
+  constructor(private readonly configuration: WifConfiguration, private readonly fetcher: HttpLike = fetch, private readonly now: () => number = Date.now) {}
+  async getIdToken(vercelAssertion: string): Promise<{ token: string; audience: string; expiresAt: number }> {
+    const input = claims(vercelAssertion);
+    if (input.iss !== this.configuration.issuer || input.aud !== this.configuration.externalAudience || input.sub !== this.configuration.subject || typeof input.exp !== "number" || input.exp * 1000 <= this.now()) throw new Error("WIF_ASSERTION_REJECTED");
+    const sts = await this.fetcher("https://sts.googleapis.com/v1/token", { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ audience: this.configuration.workloadIdentityProvider, grant_type: "urn:ietf:params:oauth:grant-type:token-exchange", requested_token_type: "urn:ietf:params:oauth:token-type:access_token", scope: "https://www.googleapis.com/auth/cloud-platform", subject_token_type: "urn:ietf:params:oauth:token-type:jwt", subject_token: vercelAssertion }) });
+    if (!sts.ok) throw new Error("WIF_STS_REJECTED"); const federated = await sts.json() as { access_token?: unknown; expires_in?: unknown; token_type?: unknown };
+    if (typeof federated.access_token !== "string" || federated.token_type !== "Bearer" || typeof federated.expires_in !== "number" || federated.expires_in <= 0 || federated.expires_in > 3600) throw new Error("WIF_STS_RESPONSE_INVALID");
+    const impersonation = await this.fetcher(`https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/${encodeURIComponent(this.configuration.serviceAccount)}:generateIdToken`, { method: "POST", headers: { authorization: `Bearer ${federated.access_token}`, "content-type": "application/json" }, body: JSON.stringify({ audience: this.configuration.cloudRunAudience, includeEmail: false }) });
+    if (!impersonation.ok) throw new Error("WIF_IMPERSONATION_REJECTED"); const result = await impersonation.json() as { token?: unknown }; if (typeof result.token !== "string") throw new Error("WIF_ID_TOKEN_INVALID"); const output = claims(result.token); if (output.aud !== this.configuration.cloudRunAudience || typeof output.exp !== "number" || output.exp * 1000 <= this.now()) throw new Error("WIF_ID_TOKEN_INVALID"); return { token: result.token, audience: this.configuration.cloudRunAudience, expiresAt: output.exp * 1000 };
+  }
+}

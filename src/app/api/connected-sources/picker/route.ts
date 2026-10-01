@@ -3,6 +3,6 @@ import { founderRuntime, founderSession, sanitizedRuntimeError } from "@/modules
 
 export async function OPTIONS() { return corsOptions(); }
 export async function GET(request: Request) {
-  try { founderSession(request); return corsJson(await founderRuntime().pickerBootstrap()); }
+  try { await founderSession(request); return corsJson(await founderRuntime().pickerBootstrap()); }
   catch (error) { return corsJson({ error: sanitizedRuntimeError(error) }, 401); }
 }

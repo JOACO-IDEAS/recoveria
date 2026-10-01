@@ -4,7 +4,7 @@ import { assertCsrf, founderRuntime, founderSession, sanitizedRuntimeError } fro
 export async function OPTIONS() { return corsOptions(); }
 export async function POST(request: Request) {
   try {
-    const session = founderSession(request); assertCsrf(request, session);
+    const session = await founderSession(request); await assertCsrf(request, session);
     const body = await request.json() as { folderId?: unknown };
     if (typeof body.folderId !== "string" || !/^[A-Za-z0-9_-]{10,}$/.test(body.folderId)) return corsJson({ error: "INVALID_REQUEST" }, 400);
     const runtime = founderRuntime(); const source = await runtime.initialize();
