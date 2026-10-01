@@ -1,0 +1,25 @@
+environment: STAGING_SYNTHETIC
+region: southamerica-east1
+services:
+  productApi:
+    public: false
+    entrypoint: staging-product-api
+    audience: SET_DURING_PHASE_7C
+  syncWorker:
+    public: false
+    entrypoint: staging-sync-worker
+    invoker: cloud-tasks-oidc-only
+  oauthCallback:
+    public: true
+    entrypoint: staging-oauth-callback
+    allowedPaths:
+      - /api/google-drive/oauth/callback
+tasks:
+  queue: recoveria-staging-sync
+  deterministicName: sha256-organization-and-sync-intent
+  delivery: at-least-once
+  authority: durable-database-intent
+security:
+  driveScope: https://www.googleapis.com/auth/drive.readonly
+  serviceAccountKeys: forbidden
+  clientZero: forbidden

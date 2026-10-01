@@ -1,0 +1,3 @@
+import { describe, expect, it } from "vitest";
+import { sanitizedTelemetry } from "./observability";
+describe("sanitized observability", () => { it("accepts operational counters", () => { expect(sanitizedTelemetry({ kind: "SYNC_EXECUTION", organizationId: "org", outcome: "SUCCEEDED", checkpointVersion: 5, downloaded: 0, reused: 40 })).toHaveProperty("reused", 40); }); it("rejects sensitive fields even through untyped input", () => { expect(() => sanitizedTelemetry({ kind: "OAUTH_LIFECYCLE", organizationId: "org", outcome: "CONNECTED", refreshToken: "secret" } as never)).toThrow("SENSITIVE_FIELD"); }); });

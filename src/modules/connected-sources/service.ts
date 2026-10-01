@@ -39,12 +39,12 @@ export class InMemoryConnectedSourceRepository implements ConnectedSourceReposit
   }
 }
 
-export interface FolderCandidate { readonly candidateId: string; readonly organizationId: string; readonly connectionId: string; readonly providerRootReference: string; readonly safeDisplayName: string; readonly expiresAt: string }
-export interface FolderCandidateRepository { create(candidate: FolderCandidate): Promise<void>; consume(organizationId: string, connectionId: string, candidateId: string, now: string): Promise<FolderCandidate | null> }
+export interface FolderCandidate { readonly candidateId: string; readonly organizationId: string; readonly connectionId: string; readonly actorId: string; readonly sessionBindingHash: string; readonly providerRootReference: string; readonly safeDisplayName: string; readonly expiresAt: string; readonly consumedAt?: string }
+export interface FolderCandidateRepository { create(candidate: FolderCandidate): Promise<void>; consume(input: { organizationId: string; connectionId: string; candidateId: string; actorId: string; sessionBindingHash: string; now: string }): Promise<FolderCandidate | null> }
 export class InMemoryFolderCandidateRepository implements FolderCandidateRepository {
   readonly records = new Map<string, FolderCandidate>();
   async create(candidate: FolderCandidate): Promise<void> { this.records.set(candidate.candidateId, candidate); }
-  async consume(organizationId: string, connectionId: string, candidateId: string, now: string): Promise<FolderCandidate | null> { const candidate = this.records.get(candidateId); if (!candidate || candidate.organizationId !== organizationId || candidate.connectionId !== connectionId || candidate.expiresAt <= now) return null; this.records.delete(candidateId); return candidate; }
+  async consume(input: { organizationId: string; connectionId: string; candidateId: string; actorId: string; sessionBindingHash: string; now: string }): Promise<FolderCandidate | null> { const candidate = this.records.get(input.candidateId); if (!candidate || candidate.organizationId !== input.organizationId || candidate.connectionId !== input.connectionId || candidate.actorId !== input.actorId || candidate.sessionBindingHash !== input.sessionBindingHash || candidate.expiresAt <= input.now || candidate.consumedAt) return null; const consumed = { ...candidate, consumedAt: input.now }; this.records.set(input.candidateId, consumed); return consumed; }
 }
 
 export interface GoogleFolderValidator { validate(input: { organizationId: string; connectionId: string; untrustedFolderId: string }): Promise<{ providerRootReference: string; safeDisplayName: string; mimeType: "application/vnd.google-apps.folder"; trashed: false; location: "MY_DRIVE" }> }
@@ -81,14 +81,14 @@ export class ConnectedSourceService {
     const source = await this.#require(actor.organizationId, input.connectedSourceId);
     const folder = await this.folders.validate({ organizationId: actor.organizationId, connectionId: source.providerConnectionId, untrustedFolderId: input.untrustedFolderId });
     const candidateId = randomUUID();
-    await this.candidates.create({ candidateId, organizationId: actor.organizationId, connectionId: source.providerConnectionId, providerRootReference: folder.providerRootReference, safeDisplayName: folder.safeDisplayName, expiresAt: new Date(this.now().getTime() + 10 * 60_000).toISOString() });
+    await this.candidates.create({ candidateId, organizationId: actor.organizationId, connectionId: source.providerConnectionId, actorId: actor.actorId, sessionBindingHash: createHash("sha256").update(actor.sessionId).digest("hex"), providerRootReference: folder.providerRootReference, safeDisplayName: folder.safeDisplayName, expiresAt: new Date(this.now().getTime() + 10 * 60_000).toISOString() });
     return { candidateId, displayName: folder.safeDisplayName };
   }
 
   async confirmFolder(actor: ProductActor, input: { connectedSourceId: string; candidateId: string; csrfToken: string }): Promise<ConnectedSourceRecord> {
     authorizeMutation(actor, { organizationId: actor.organizationId, csrfToken: input.csrfToken });
     const source = await this.#require(actor.organizationId, input.connectedSourceId);
-    const candidate = await this.candidates.consume(actor.organizationId, source.providerConnectionId, input.candidateId, this.now().toISOString());
+    const candidate = await this.candidates.consume({ organizationId: actor.organizationId, connectionId: source.providerConnectionId, candidateId: input.candidateId, actorId: actor.actorId, sessionBindingHash: createHash("sha256").update(actor.sessionId).digest("hex"), now: this.now().toISOString() });
     if (!candidate) throw new Error("CONNECTED_SOURCE_FOLDER_CANDIDATE_INVALID");
     return this.sources.save({ ...source, providerRootReference: candidate.providerRootReference, rootDisplayName: candidate.safeDisplayName, rootConfirmedBy: actor.actorId, rootConfirmedAt: this.now().toISOString(), rootBoundaryVersion: source.rootBoundaryVersion + 1, health: "READY", lastAttemptedSyncAt: undefined, lastSuccessfulSyncAt: undefined, committedDocumentCount: 0, reviewRequiredCount: 0 }, source.revision);
   }

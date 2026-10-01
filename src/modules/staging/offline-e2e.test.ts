@@ -1,0 +1,16 @@
+import { createHash } from "node:crypto";
+import { describe, expect, it, vi } from "vitest";
+import { InMemorySyncIntentRepository, type SyncIntentRecord } from "../connected-sources/service";
+import { FounderSessionService, InMemoryStagingSessionRepository } from "./auth";
+import { forwardBffRequest } from "./bff";
+import { readProviderBackedPreview } from "./provider-preview";
+import { AsyncSyncCoordinator, FakeTaskDispatcher, InMemoryStagingSyncTaskRepository, StagingSyncWorker } from "./sync-task";
+
+describe("offline synthetic staging E2E", () => {
+  it("crosses founder auth, BFF, durable intent, fake task/worker, checkpoint-shaped status, invoices and preview without network", async () => {
+    const sessions = new FounderSessionService(new InMemoryStagingSessionRepository(), "s".repeat(43), ["founder@example.test"]); const issued = await sessions.issue({ organizationId: "org", actorId: "founder", email: "founder@example.test" }); const principal = await sessions.authenticate(issued.cookie); sessions.assertCsrf(principal, issued.csrfToken);
+    const network = vi.fn(async () => new Response(JSON.stringify({ source: "READY", invoiceCount: 40, checkpointVersion: 5 }), { headers: { "content-type": "application/json" } })); const response = await forwardBffRequest(new Request("https://staging.example/api/connected-sources/status", { headers: { cookie: `__Host-recoveria_staging_session=${issued.cookie}` } }), "https://cloud-run.invalid", "https://cloud-run.invalid", { get: async audience => ({ token: "fake-oidc", audience, expiresAt: Date.now() + 60_000 }) }, network as typeof fetch); expect((await response.json()).invoiceCount).toBe(40);
+    const intents = new InMemorySyncIntentRepository(); const tasks = new InMemoryStagingSyncTaskRepository(); const dispatcher = new FakeTaskDispatcher(); const record: SyncIntentRecord = { organizationId: "org", connectedSourceId: "source", syncIntentId: "intent", actorId: principal.actorId, sessionBindingHash: createHash("sha256").update(principal.sid).digest("hex"), executionId: "execution", status: "RUNNING" }; const task = await new AsyncSyncCoordinator(intents, tasks, dispatcher).accept(record); const summary = { documentsAnalyzed: 40, uniqueDocuments: 39, exactDuplicates: 1, possibleDuplicates: 0, detectedEntities: 0, reviewRequired: 147 }; await new StagingSyncWorker(intents, tasks, async () => summary).deliver(task.name); expect(dispatcher.dispatched).toHaveLength(1); expect((await intents.claim(record)).record).toMatchObject({ status: "SUCCEEDED", summary });
+    const pdf = new TextEncoder().encode("%PDF-1.7\nsynthetic\n%%EOF"); const preview = await readProviderBackedPreview({ organizationId: "org", actorId: "founder" }, "doc", { find: async () => ({ organizationId: "org", connectionId: "connection", documentId: "doc", providerDocumentId: "provider-doc", providerRootReference: "server-only", displayName: "invoice.pdf", mimeType: "application/pdf", fingerprintSha256: createHash("sha256").update(pdf).digest("hex") }) }, { read: async () => ({ bytes: pdf, mimeType: "application/pdf", rootMember: true }) }, { record: async () => undefined }); expect(preview.status).toBe(200); expect(network).toHaveBeenCalledOnce();
+  });
+});

@@ -80,4 +80,12 @@ describe("ConnectedSourceService offline product flow", () => {
     await expect(service.sync(actor, { connectedSourceId: source.id, csrfToken: "csrf", syncIntentId: "44444444-4444-4444-8444-444444444444" })).resolves.toMatchObject({ status: "FAILED", failureCode: "PILOT_TERMINAL_STATE_RECONCILIATION_REQUIRED" });
     expect((await sources.find("org", source.id))?.health).toBe("SYNCING");
   });
+  it("binds candidates to actor/session and makes consumption one-time", async () => {
+    const sources = new InMemoryConnectedSourceRepository(); const candidates = new InMemoryFolderCandidateRepository();
+    const service = new ConnectedSourceService(sources, candidates, { async validate() { return { providerRootReference: "server-only", safeDisplayName: "Invoices", mimeType: "application/vnd.google-apps.folder", trashed: false, location: "MY_DRIVE" }; } }, { async execute() { return summary(); } });
+    const source = await service.ensureConnection("org", "connection"); const candidate = await service.validateFolder(actor, { connectedSourceId: source.id, csrfToken: "csrf", untrustedFolderId: "opaque" });
+    await expect(service.confirmFolder({ ...actor, sessionId: "other" }, { connectedSourceId: source.id, candidateId: candidate.candidateId, csrfToken: "csrf" })).rejects.toThrow("CANDIDATE_INVALID");
+    await service.confirmFolder(actor, { connectedSourceId: source.id, candidateId: candidate.candidateId, csrfToken: "csrf" });
+    await expect(service.confirmFolder(actor, { connectedSourceId: source.id, candidateId: candidate.candidateId, csrfToken: "csrf" })).rejects.toThrow("CANDIDATE_INVALID");
+  });
 });

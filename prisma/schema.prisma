@@ -232,6 +232,13 @@ enum ConnectedSourceSyncIntentStatus {
   FAILED
 }
 
+enum StagingSyncTaskStatus {
+  PENDING
+  RUNNING
+  SUCCEEDED
+  FAILED
+}
+
 model Organization {
   id                          String                              @id @default(cuid())
   name                        String
@@ -260,6 +267,9 @@ model Organization {
   reviewTasks                 ReviewTask[]
   connectedSources            ConnectedSource[]
   connectedSourceSyncIntents  ConnectedSourceSyncIntent[]
+  stagingSessions             StagingFounderSession[]
+  folderCandidates            ConnectedSourceFolderCandidate[]
+  stagingSyncTasks            StagingSyncTask[]
   legalReviewFlags            LegalReviewFlag[]
   importSummaries             ImportBatchSummary[]
   invoiceCandidates           InvoiceImportCandidate[]
@@ -291,6 +301,8 @@ model ConnectedSource {
   updatedAt              DateTime                    @updatedAt
   organization           Organization                @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   syncIntents            ConnectedSourceSyncIntent[]
+  folderCandidates       ConnectedSourceFolderCandidate[]
+  stagingSyncTasks       StagingSyncTask[]
 
   @@unique([organizationId, provider, providerConnectionId])
   @@index([organizationId, health])
@@ -316,6 +328,58 @@ model ConnectedSourceSyncIntent {
   @@unique([organizationId, connectedSourceId, syncIntentId])
   @@unique([organizationId, syncIntentId])
   @@index([organizationId, connectedSourceId, status])
+}
+
+model StagingFounderSession {
+  idHash         String       @id
+  organizationId String
+  actorId        String
+  email          String
+  expiresAt      DateTime
+  revokedAt      DateTime?
+  createdAt      DateTime     @default(now())
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, actorId, expiresAt])
+}
+
+model ConnectedSourceFolderCandidate {
+  id                    String          @id
+  organizationId        String
+  connectedSourceId     String
+  providerConnectionId  String
+  actorId                String
+  sessionBindingHash     String
+  providerRootReference String
+  safeDisplayName       String
+  expiresAt              DateTime
+  consumedAt             DateTime?
+  createdAt              DateTime        @default(now())
+  organization           Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  connectedSource        ConnectedSource @relation(fields: [connectedSourceId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, connectedSourceId, expiresAt])
+}
+
+model StagingSyncTask {
+  id                    String                @id @default(cuid())
+  organizationId        String
+  connectedSourceId     String
+  syncIntentId          String
+  executionId           String
+  deterministicTaskName String                @unique
+  status                StagingSyncTaskStatus @default(PENDING)
+  attempts              Int                   @default(0)
+  failureCode           String?
+  createdAt             DateTime              @default(now())
+  startedAt             DateTime?
+  completedAt           DateTime?
+  updatedAt             DateTime              @updatedAt
+  organization          Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  connectedSource       ConnectedSource       @relation(fields: [connectedSourceId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, syncIntentId])
+  @@index([organizationId, status, createdAt])
 }
 
 model Membership {
