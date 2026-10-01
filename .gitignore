@@ -33,6 +33,7 @@
 # CLIENT ZERO / REAL DATA — never commit, stage, package, or serve.
 /.private/client-zero/**
 /.private/synthetic-pilot/**
+/.private/backups/**
 /client-zero-private/**
 /reports/client-zero/**
 /screenshots/client-zero/**

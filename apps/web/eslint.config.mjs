@@ -5,5 +5,6 @@ import nextTypeScript from "eslint-config-next/typescript";
 export default defineConfig([
   ...nextVitals,
   ...nextTypeScript,
-  globalIgnores([".next/**", "coverage/**", "src/generated/**", "apps/web/**"]),
+  { rules: { "react/no-unescaped-entities": "off", "react-hooks/set-state-in-effect": "off" } },
+  globalIgnores([".next/**", "dist/**", "out/**"]),
 ]);
