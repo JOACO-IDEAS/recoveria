@@ -13,7 +13,8 @@ const stagingSchema = z.object({
   RECOVERIA_CLOUD_RUN_API_AUDIENCE: z.string().url().startsWith("https://"),
   RECOVERIA_TASK_QUEUE: z.string().min(1),
   RECOVERIA_SESSION_KEY: z.string().min(43),
-  RECOVERIA_FOUNDER_EMAILS: z.string().min(3),
+  RECOVERIA_FOUNDER_EMAIL: z.string().email(),
+  RECOVERIA_FOUNDER_ACTOR_ID: z.string().min(1),
   RECOVERIA_EXTERNAL_IDENTITY_ISSUER: z.literal("https://accounts.google.com"),
   RECOVERIA_EXTERNAL_IDENTITY_CLIENT_ID: z.string().min(10),
   RECOVERIA_WIF_PROVIDER: z.string().startsWith("//iam.googleapis.com/projects/"),
@@ -25,16 +26,14 @@ const stagingSchema = z.object({
   RECOVERIA_FOLDER_CANDIDATES: z.literal("prisma"),
 });
 
-export type StagingEnvironment = z.infer<typeof stagingSchema> & { readonly founderEmails: readonly string[] };
+export type StagingEnvironment = z.infer<typeof stagingSchema>;
 
 export function parseStagingEnvironment(input: Record<string, string | undefined>): StagingEnvironment {
   const parsed = stagingSchema.parse(input);
   const database = new URL(parsed.RECOVERIA_DATABASE_URL);
   const serialized = `${database.hostname}${database.pathname}`.toLowerCase();
   if (database.pathname !== "/recoveria_pilot" || /client[-_]?zero|concilia|production/.test(serialized)) throw new Error("STAGING_DATABASE_BOUNDARY_REJECTED");
-  const founderEmails = [...new Set(parsed.RECOVERIA_FOUNDER_EMAILS.split(",").map(value => value.trim().toLowerCase()).filter(Boolean))];
-  if (!founderEmails.length || founderEmails.some(value => !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(value))) throw new Error("STAGING_FOUNDER_ALLOWLIST_INVALID");
-  return { ...parsed, founderEmails };
+  return { ...parsed, RECOVERIA_FOUNDER_EMAIL: parsed.RECOVERIA_FOUNDER_EMAIL.toLowerCase() };
 }
 
 export function assertEnvironmentSeparation(environment: RecoveriaEnvironment, value: string): void {
