@@ -35,6 +35,7 @@ import {
 import { PrismaFolderCandidateRepository } from "./prisma-folder-candidate";
 import { STAGING_SESSION_COOKIE } from "@/modules/staging/auth";
 import { stagingAuthRuntime } from "@/modules/staging/runtime-auth";
+import { MetadataAccessTokenProvider } from "@/modules/staging/cloud-tasks";
 
 const ORGANIZATION_ID = "recoveria-synthetic-pilot";
 const CONNECTION_ID = "google-drive-pilot";
@@ -52,8 +53,12 @@ function safeError(error: unknown): string {
   return /^[A-Z0-9_]+$/.test(message) ? message : "CONNECTED_SOURCE_OPERATION_FAILED";
 }
 
-function cloudHeaders(): Record<string, string> {
-  return { Authorization: `Bearer ${required("CONNECTED_SOURCE_GOOGLE_CLOUD_ACCESS_TOKEN")}`, "Content-Type": "application/json" };
+const cloudIdentity = new MetadataAccessTokenProvider();
+
+async function cloudHeaders(): Promise<Record<string, string>> {
+  const localToken = process.env.CONNECTED_SOURCE_GOOGLE_CLOUD_ACCESS_TOKEN?.trim();
+  const token = localToken || await cloudIdentity.get();
+  return { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
 }
 
 function assertConfiguration(): void {
@@ -88,7 +93,7 @@ export class FounderConnectedSourceRuntime {
     this.lifecycle = new PrismaDriveConnectionLifecycleRepository(this.prisma);
     this.credentials = new PrismaDriveCredentialEnvelopeRepository(this.prisma);
 
-    const authorizedJson = async (url: string, init: RequestInit = {}): Promise<Response> => fetch(url, { ...init, headers: { ...cloudHeaders(), ...init.headers }, cache: "no-store" });
+    const authorizedJson = async (url: string, init: RequestInit = {}): Promise<Response> => fetch(url, { ...init, headers: { ...await cloudHeaders(), ...init.headers }, cache: "no-store" });
     const secrets = new GoogleSecretManagerAdapter({ async accessSecretVersion(resourceName) {
       const response = await authorizedJson(`https://secretmanager.googleapis.com/v1/${resourceName}:access`);
       if (!response.ok) return null;
