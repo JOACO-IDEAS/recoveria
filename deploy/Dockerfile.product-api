@@ -5,6 +5,7 @@ RUN npm ci
 COPY prisma ./prisma
 RUN npx prisma generate
 COPY tsconfig.json next.config.ts next-env.d.ts postcss.config.mjs eslint.config.mjs ./
+COPY apps/web/lib/founder-auth-policy.ts ./apps/web/lib/founder-auth-policy.ts
 COPY src ./src
 COPY scripts/staging/run-product-api.ts ./scripts/staging/run-product-api.ts
 RUN npm run build
