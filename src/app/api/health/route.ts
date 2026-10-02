@@ -1,0 +1,1 @@
+export async function GET() { return Response.json({ status: "READY", environment: process.env.RECOVERIA_ENVIRONMENT === "STAGING_SYNTHETIC" ? "STAGING_SYNTHETIC" : "LOCAL" }, { headers: { "cache-control": "no-store", "x-content-type-options": "nosniff" } }); }

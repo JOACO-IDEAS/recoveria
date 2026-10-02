@@ -21,6 +21,12 @@
     "pilot:google-drive:oauth-initiate": "tsx scripts/ingestion/initiate-google-drive-oauth.ts",
     "product-surface:local": "tsx scripts/product-surface/run-local-integration.ts",
     "product-surface:connected-founder": "tsx scripts/product-surface/run-connected-source-founder.ts",
+    "staging:product-api": "tsx scripts/staging/run-product-api.ts",
+    "staging:worker": "tsx scripts/staging/run-sync-worker.ts",
+    "staging:build:product-api": "docker build -f deploy/Dockerfile.product-api -t recoveria-staging-product-api:local .",
+    "staging:build:worker": "docker build -f deploy/Dockerfile.worker -t recoveria-staging-worker:local .",
+    "staging:artifact:product-api": "npm run build && esbuild scripts/staging/run-product-api.ts --bundle --platform=node --packages=external --format=esm --outfile=.artifacts/product-api/entrypoint.mjs",
+    "staging:artifact:worker": "esbuild scripts/staging/run-sync-worker.ts --bundle --platform=node --packages=external --format=esm --outfile=.artifacts/worker/entrypoint.mjs",
     "smoke:email:controlled": "tsx scripts/communication/run-controlled-email-smoke-test.ts"
   },
   "dependencies": {

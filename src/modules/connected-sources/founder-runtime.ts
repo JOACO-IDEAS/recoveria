@@ -63,7 +63,7 @@ function assertConfiguration(): void {
   if (required("CONNECTED_SOURCE_ORGANIZATION_ID") !== ORGANIZATION_ID || required("CONNECTED_SOURCE_CONNECTION_ID") !== CONNECTION_ID) throw new Error("CONNECTED_SOURCE_IDENTITY_REJECTED");
 }
 
-class FounderConnectedSourceRuntime {
+export class FounderConnectedSourceRuntime {
   readonly prisma: PrismaClient;
   readonly sources: PrismaConnectedSourceRepository;
   readonly lifecycle: PrismaDriveConnectionLifecycleRepository;

@@ -40,3 +40,4 @@
 *client-zero-sensitive-report*
 .vercel
 .env*
+.artifacts/

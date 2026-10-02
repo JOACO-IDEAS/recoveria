@@ -1,0 +1,19 @@
+"use client";
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
+import { BrandLockup } from "@/components/logo";
+import { founderShellView } from "@/lib/founder-auth-policy";
+type Session = { actorId: string; organizationId: string; email: string; csrfToken: string; expiresAt: string };
+type GisApi = { accounts: { id: { initialize(input: { client_id: string; callback(result: { credential?: string }): void; auto_select: false; cancel_on_tap_outside: true }): void; renderButton(target: HTMLElement, options: object): void } } };
+const AuthContext = createContext<{ session: Session; logout(): Promise<void> } | null>(null);
+const endpoint = (path: string) => `/api/staging/api/staging-auth/${path}`;
+export function useFounderAuth() { const value = useContext(AuthContext); if (!value) throw new Error("FOUNDER_AUTH_CONTEXT_REQUIRED"); return value; }
+export function FounderAuthGate({ children }: { children: React.ReactNode }) {
+  const [session, setSession] = useState<Session | null>(); const [error, setError] = useState(""); const button = useRef<HTMLDivElement>(null); const clientId = process.env.NEXT_PUBLIC_RECOVERIA_GOOGLE_CLIENT_ID ?? "";
+  const loadSession = useCallback(async () => { const response = await fetch(endpoint("session"), { credentials: "include", cache: "no-store" }); if (!response.ok) { setSession(null); return; } setSession(await response.json() as Session); }, []);
+  useEffect(() => { void loadSession(); }, [loadSession]);
+  useEffect(() => { if (session !== null || !clientId || !button.current) return; const google = () => (window as unknown as { google?: GisApi }).google; const start = () => { const api = google(); if (!api || !button.current) return; api.accounts.id.initialize({ client_id: clientId, auto_select: false, cancel_on_tap_outside: true, callback: result => { if (!result.credential) return setError("No pudimos verificar tu identidad."); void fetch(endpoint("login"), { method: "POST", credentials: "include", headers: { "content-type": "application/json" }, body: JSON.stringify({ credential: result.credential }) }).then(async response => { if (!response.ok) throw new Error(); await loadSession(); }).catch(() => setError("Esta cuenta no está autorizada para ingresar.")); } }); api.accounts.id.renderButton(button.current, { type: "standard", theme: "outline", size: "large", text: "continue_with", shape: "rectangular", width: 300 }); }; if (google()) return start(); const script = document.createElement("script"); script.src = "https://accounts.google.com/gsi/client"; script.async = true; script.onload = start; script.onerror = () => setError("No pudimos cargar el acceso seguro."); document.head.appendChild(script); return () => script.remove(); }, [clientId, loadSession, session]);
+  const logout = async () => { if (!session) return; await fetch(endpoint("logout"), { method: "POST", credentials: "include", headers: { "x-csrf-token": session.csrfToken } }); setSession(null); };
+  const view = founderShellView(session); if (view === "LOADING") return <div className="auth-loading" aria-label="Verificando sesión"><span /></div>;
+  if (view === "LOGIN") return <main className="founder-login"><section><BrandLockup symbolSize={52} wordmarkSize={28} /><span className="login-kicker">STAGING SINTÉTICO · ACCESO RESTRINGIDO</span><h1>Ingresá a Recoveria</h1><p>Este espacio está disponible únicamente para la identidad fundadora autorizada.</p>{clientId ? <div ref={button} className="gis-button" /> : <div className="login-error">Configuración de identidad no disponible.</div>}{error && <div className="login-error" role="alert">{error}</div>}<small>Google verifica tu identidad. Recoveria crea una sesión privada y no recibe tu contraseña.</small></section></main>;
+  return <AuthContext.Provider value={{ session, logout }}>{children}</AuthContext.Provider>;
+}

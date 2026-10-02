@@ -1,0 +1,11 @@
+.git
+.next
+.private
+.env*
+apps/web/.env*
+apps/web/.vercel
+node_modules
+apps/web/node_modules
+coverage
+docs
+*.log

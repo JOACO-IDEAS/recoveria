@@ -1,0 +1,13 @@
+FROM node:22-alpine AS build
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci
+COPY prisma ./prisma
+RUN npx prisma generate
+COPY tsconfig.json next.config.ts next-env.d.ts postcss.config.mjs eslint.config.mjs ./
+COPY public ./public
+COPY src ./src
+COPY scripts/staging/run-product-api.ts ./scripts/staging/run-product-api.ts
+RUN npm run build
+ENV NODE_ENV=production
+CMD ["./node_modules/.bin/tsx", "scripts/staging/run-product-api.ts"]

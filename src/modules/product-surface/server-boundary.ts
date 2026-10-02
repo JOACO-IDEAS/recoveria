@@ -5,6 +5,9 @@ import { PrismaProductSurfaceCheckpointReader } from "./prisma-checkpoint-reader
 import { ProductSurfaceQueryService } from "./read-model";
 import { readCommittedPdfPreview } from "./document-preview";
 import { founderSession } from "@/modules/connected-sources/founder-runtime";
+import { founderRuntime } from "@/modules/connected-sources/founder-runtime";
+import { readProviderBackedPreview } from "@/modules/staging/provider-preview";
+import { RealGoogleDriveClient } from "@/modules/ingestion/real-google-drive-client";
 
 export type ProductSurfaceServerResult<T> =
   | { readonly status: 200; readonly data: T }
@@ -85,12 +88,18 @@ export function productSurfaceResponse<T>(result: ProductSurfaceServerResult<T>)
 
 export async function productSurfaceDocumentResponse(request: Request, documentId: string): Promise<Response> {
   let principal; try { principal = await founderSession(request); } catch { return productSurfaceResponse({ status: 401, error: "UNAUTHORIZED" }); }
-  const directory = requiredEnvironment("RECOVERIA_PRODUCT_SURFACE_DOCUMENT_DIRECTORY");
   const context = productSurfaceContext();
-  if (!directory || !context) return productSurfaceResponse({ status: 503, error: "NOT_CONFIGURED" });
+  if (!context) return productSurfaceResponse({ status: 503, error: "NOT_CONFIGURED" });
   const scope = await configuredProductSurfaceScope(context.client);
   if (!scope) return productSurfaceResponse({ status: 503, error: "NOT_CONFIGURED" });
   if (scope.organizationId !== principal.organizationId) return productSurfaceResponse({ status: 401, error: "UNAUTHORIZED" });
+  if (process.env.RECOVERIA_ENVIRONMENT === "STAGING_SYNTHETIC") {
+    const checkpoints = new PrismaProductSurfaceCheckpointReader(context.client); const loaded = await checkpoints.load(scope); const entry = loaded?.checkpoint.entries.find(item => item.source.sourceDocumentId === documentId); const runtime = founderRuntime(); const source = await runtime.sources.findByConnection(scope.organizationId, scope.connectionId); if (!entry || !source?.providerRootReference) return productSurfaceResponse({ status: 404, error: "NOT_FOUND" });
+    const client = new RealGoogleDriveClient({ organizationId: scope.organizationId, connectionId: scope.connectionId, googleSubject: "server-verified", authorizedRootId: source.providerRootReference, authorizationState: "CONNECTED" }, runtime.credentialProvider, runtime.driveTransport);
+    const result = await readProviderBackedPreview(principal, documentId, { find: async organizationId => organizationId === scope.organizationId ? { organizationId, connectionId: scope.connectionId, documentId, providerDocumentId: entry.source.sourceDocumentId, providerRootReference: source.providerRootReference!, displayName: entry.source.displayName, mimeType: entry.source.mimeType, fingerprintSha256: entry.source.fingerprintSha256, providerContentIdentity: entry.source.providerContentIdentity } : null }, { read: async input => { const metadata = await client.getMetadata(input.providerDocumentId); const bytes = await client.readPdfContent(input.providerDocumentId); return { bytes, mimeType: metadata.mimeType, rootMember: true, providerContentIdentity: metadata.providerContentIdentity }; } }, { record: async event => { console.log(JSON.stringify({ event: event.kind, outcome: event.outcome })); } });
+    if (result.status !== 200) return Response.json({ error: result.error }, { status: result.status, headers: { "cache-control": "private, no-store", "x-content-type-options": "nosniff" } }); return productSurfacePdfResponse(result.bytes, result.displayName);
+  }
+  const directory = requiredEnvironment("RECOVERIA_PRODUCT_SURFACE_DOCUMENT_DIRECTORY"); if (!directory) return productSurfaceResponse({ status: 503, error: "NOT_CONFIGURED" });
   const result = await readCommittedPdfPreview(new PrismaProductSurfaceCheckpointReader(context.client), scope, documentId, directory);
   if (result.status !== 200) return Response.json({ error: result.error }, { status: result.status, headers: { "cache-control": "private, no-store, max-age=0", "x-content-type-options": "nosniff" } });
   return productSurfacePdfResponse(result.bytes, result.displayName);

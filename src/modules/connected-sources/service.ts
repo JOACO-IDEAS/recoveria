@@ -114,6 +114,10 @@ export class ConnectedSourceService {
     }
   }
 
+  async executeQueued(input: { organizationId: string; connectedSourceId: string; actorId: string; executionId: string }): Promise<ConnectedSourceSyncSummary> {
+    return this.#execute({ organizationId: input.organizationId, actorId: input.actorId, sessionId: "worker", csrfToken: "worker" }, input.connectedSourceId, input.executionId);
+  }
+
   async disconnect(actor: ProductActor, input: { connectedSourceId: string; csrfToken: string }): Promise<ConnectedSourceRecord> {
     authorizeMutation(actor, { organizationId: actor.organizationId, csrfToken: input.csrfToken });
     const source = await this.#require(actor.organizationId, input.connectedSourceId);

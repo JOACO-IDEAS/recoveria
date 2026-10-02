@@ -1,0 +1,2 @@
+import { describe, expect, it } from "vitest"; import { founderShellView } from "../../../apps/web/lib/founder-auth-policy";
+describe("founder shell gate", () => { it("never renders workspace while anonymous or session status is unknown", () => { expect(founderShellView(undefined)).toBe("LOADING"); expect(founderShellView(null)).toBe("LOGIN"); expect(founderShellView({ actorId: "founder" })).toBe("WORKSPACE"); }); });

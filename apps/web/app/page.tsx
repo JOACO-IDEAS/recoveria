@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { ArrowRight, ArrowUpRight, Building2, CalendarDays, CheckCircle2, CircleDollarSign, Clock3, Cloud, FileDown, Filter, Gauge, Inbox, LayoutDashboard, Menu, MoreHorizontal, Search, ShieldCheck, Sparkles, UploadCloud, WalletCards, FileText as FileTextIcon, X } from "lucide-react";
+import { ArrowRight, ArrowUpRight, Building2, CalendarDays, CheckCircle2, CircleDollarSign, Clock3, Cloud, FileDown, Filter, Gauge, Inbox, LayoutDashboard, LogOut, Menu, MoreHorizontal, Search, ShieldCheck, Sparkles, UploadCloud, WalletCards, FileText as FileTextIcon, X } from "lucide-react";
 import { StoreProvider, useStore } from "@/lib/store";
 import { agingBuckets, casesByStatus, entityTotals, insight, invoicesForCase, money, priorityCases, recoveredThisMonth, riskCounts, totalOutstanding, totalOverdue, confidenceForCase } from "@/lib/selectors";
 import { downloadCsv } from "@/lib/export-csv";
@@ -21,8 +21,9 @@ import { ProductInvoices } from "@/components/product-invoices";
 import { ProductDocumentDetail } from "@/components/product-document-detail";
 import { ConnectedSources } from "@/components/connected-sources";
 import type { NotificationItem } from "@/lib/types";
+import { FounderAuthGate, useFounderAuth } from "@/components/founder-auth-gate";
 
-function Sidebar({ view, setView, open, setOpen, onAbout }: { view: View; setView: (v: View) => void; open: boolean; setOpen: (v: boolean) => void; onAbout: () => void }) {
+function Sidebar({ view, setView, open, setOpen, onAbout, onLogout }: { view: View; setView: (v: View) => void; open: boolean; setOpen: (v: boolean) => void; onAbout: () => void; onLogout: () => void }) {
   const items: [View, string, React.ElementType][] = [["inicio", "Resumen", LayoutDashboard], ["cartera", "Cartera", WalletCards], ["facturas", "Facturas", FileTextIcon], ["casos", "Casos prioritarios", Inbox], ["importaciones", "Importaciones", UploadCloud], ["agente", "Agente", Sparkles], ["fuentes", "Fuentes", Cloud]];
   const { state } = useStore();
   const pendingCount = casesByStatus(state, "pendiente").length;
@@ -30,7 +31,7 @@ function Sidebar({ view, setView, open, setOpen, onAbout }: { view: View; setVie
     <div className="brand"><BrandLockup symbolSize={42} wordmarkSize={21} light /><button className="mobile-close" onClick={() => setOpen(false)} aria-label="Cerrar menú"><X size={20} /></button></div>
     <div className="workspace"><span>Espacio de trabajo</span><div className="workspace-static"><div className="workspace-icon"><Building2 size={16} /></div><div><strong>Ascensores Horizonte</strong><small>Cuenta principal</small></div></div></div>
     <nav aria-label="Navegación principal"><span className="nav-label">Operación</span>{items.map(([id, label, Icon]) => <button key={id} className={view === id ? "active" : ""} aria-current={view === id ? "page" : undefined} onClick={() => { setView(id); setOpen(false); }}><Icon size={18} /><span>{label}</span>{id === "casos" && pendingCount > 0 && <b>{pendingCount}</b>}</button>)}</nav>
-    <div className="profile"><div className="avatar">JC</div><div><strong>Joaquín</strong><span>Administrador</span></div><button onClick={onAbout} aria-label="Acerca de Recoveria"><MoreHorizontal size={18} /></button></div>
+    <div className="profile"><div className="avatar">JC</div><div><strong>Joaquín</strong><span>Administrador</span></div><button onClick={onAbout} aria-label="Acerca de Recoveria"><MoreHorizontal size={18} /></button><button onClick={onLogout} aria-label="Cerrar sesión"><LogOut size={17} /></button></div>
   </aside>;
 }
 
@@ -110,6 +111,7 @@ function Cases({ onCase }: { onCase: (c: CaseRecord) => void }) {
 }
 
 function AppShell() {
+  const { logout } = useFounderAuth();
   const { state } = useStore();
   const [view, setView] = useState<View>("inicio");
   const [menu, setMenu] = useState(false);
@@ -138,7 +140,7 @@ function AppShell() {
   const onSelectNotification = (n: NotificationItem) => { if (n.refType === "case") { setView("casos"); openCase(n.refId); } else { setView("importaciones"); } };
 
   return <div className="app-shell">
-    <Sidebar view={view} setView={setView} open={menu} setOpen={setMenu} onAbout={() => setAboutOpen(true)} />
+    <Sidebar view={view} setView={setView} open={menu} setOpen={setMenu} onAbout={() => setAboutOpen(true)} onLogout={() => void logout()} />
     <div className="app-main">
       <Topbar setOpen={setMenu} onSearch={() => setPaletteOpen(true)} notifOpen={notifOpen} setNotifOpen={setNotifOpen} onSelectNotification={onSelectNotification} />
       <main className="content">
@@ -164,5 +166,5 @@ function AppShell() {
 }
 
 export default function Home() {
-  return <StoreProvider><AppShell /></StoreProvider>;
+  return <FounderAuthGate><StoreProvider><AppShell /></StoreProvider></FounderAuthGate>;
 }
