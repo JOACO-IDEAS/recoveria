@@ -9,7 +9,7 @@ async function main(): Promise<void> {
   if (!process.env.PORT || !/^\d+$/.test(process.env.PORT)) throw new Error("STAGING_PORT_REQUIRED");
   startupStage = "DATABASE_PROBE";
   const probe = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.RECOVERIA_DATABASE_URL!, max: 1 }) });
-  const rows = await probe.$queryRawUnsafe<Array<{ database: string }>>("SELECT current_database() AS database");
+  const rows = await probe.$queryRawUnsafe<Array<{ database: string }>>("SELECT current_database()::text AS database");
   await probe.$disconnect();
   if (rows[0]?.database !== "recoveria_pilot") throw new Error("STAGING_DATABASE_BOUNDARY_REJECTED");
   startupStage = "NEXT_START";
