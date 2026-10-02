@@ -23,4 +23,9 @@ async function main(): Promise<void> {
   const shutdown = () => server.close(() => void runtime.prisma.$disconnect().finally(() => process.exit(0))); process.on("SIGTERM", shutdown); process.on("SIGINT", shutdown);
 }
 
-void main().catch(() => { console.error(JSON.stringify({ event: "STAGING_WORKER_START_FAILED", stage: startupStage })); process.exit(1); });
+void main().catch((error: unknown) => {
+  const candidate = error && typeof error === "object" ? error as { name?: unknown; code?: unknown } : {};
+  const safe = (value: unknown) => typeof value === "string" && /^[A-Za-z0-9_]+$/.test(value) ? value : undefined;
+  console.error(JSON.stringify({ event: "STAGING_WORKER_START_FAILED", stage: startupStage, errorName: safe(candidate.name), errorCode: safe(candidate.code) }));
+  process.exit(1);
+});

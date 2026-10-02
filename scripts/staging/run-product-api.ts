@@ -19,4 +19,9 @@ async function main(): Promise<void> {
   child.on("exit", code => process.exit(code ?? 1));
 }
 
-void main().catch(() => { console.error(JSON.stringify({ event: "STAGING_PRODUCT_API_START_FAILED", stage: startupStage })); process.exit(1); });
+void main().catch((error: unknown) => {
+  const candidate = error && typeof error === "object" ? error as { name?: unknown; code?: unknown } : {};
+  const safe = (value: unknown) => typeof value === "string" && /^[A-Za-z0-9_]+$/.test(value) ? value : undefined;
+  console.error(JSON.stringify({ event: "STAGING_PRODUCT_API_START_FAILED", stage: startupStage, errorName: safe(candidate.name), errorCode: safe(candidate.code) }));
+  process.exit(1);
+});
