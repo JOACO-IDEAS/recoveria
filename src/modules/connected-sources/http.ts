@@ -4,7 +4,7 @@ export function corsHeaders(extra: Record<string, string> = {}): Headers {
   return new Headers({
     "Access-Control-Allow-Origin": ORIGIN,
     "Access-Control-Allow-Credentials": "true",
-    "Access-Control-Allow-Headers": "Content-Type, X-CSRF-Token, X-Sync-Intent-Id",
+    "Access-Control-Allow-Headers": "Content-Type, X-CSRF-Token, X-Sync-Intent-Id, X-Staging-Probe-Id",
     "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
     "Cache-Control": "no-store",
     Vary: "Origin",

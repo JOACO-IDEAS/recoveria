@@ -1,0 +1,5 @@
+CREATE TABLE "StagingAsyncProbe" ("id" TEXT NOT NULL, "organizationId" TEXT NOT NULL, "probeId" TEXT NOT NULL, "deterministicTaskName" TEXT NOT NULL, "status" "StagingSyncTaskStatus" NOT NULL DEFAULT 'PENDING', "attempts" INTEGER NOT NULL DEFAULT 0, "failureCode" TEXT, "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, "startedAt" TIMESTAMP(3), "completedAt" TIMESTAMP(3), "updatedAt" TIMESTAMP(3) NOT NULL, CONSTRAINT "StagingAsyncProbe_pkey" PRIMARY KEY ("id"));
+CREATE UNIQUE INDEX "StagingAsyncProbe_deterministicTaskName_key" ON "StagingAsyncProbe"("deterministicTaskName");
+CREATE UNIQUE INDEX "StagingAsyncProbe_organizationId_probeId_key" ON "StagingAsyncProbe"("organizationId", "probeId");
+CREATE INDEX "StagingAsyncProbe_organizationId_status_createdAt_idx" ON "StagingAsyncProbe"("organizationId", "status", "createdAt");
+ALTER TABLE "StagingAsyncProbe" ADD CONSTRAINT "StagingAsyncProbe_organizationId_fkey" FOREIGN KEY ("organizationId") REFERENCES "Organization"("id") ON DELETE CASCADE ON UPDATE CASCADE;

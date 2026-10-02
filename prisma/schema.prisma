@@ -270,6 +270,7 @@ model Organization {
   stagingSessions             StagingFounderSession[]
   folderCandidates            ConnectedSourceFolderCandidate[]
   stagingSyncTasks            StagingSyncTask[]
+  stagingAsyncProbes          StagingAsyncProbe[]
   legalReviewFlags            LegalReviewFlag[]
   importSummaries             ImportBatchSummary[]
   invoiceCandidates           InvoiceImportCandidate[]
@@ -379,6 +380,29 @@ model StagingSyncTask {
   connectedSource       ConnectedSource       @relation(fields: [connectedSourceId], references: [id], onDelete: Cascade)
 
   @@unique([organizationId, syncIntentId])
+  @@index([organizationId, status, createdAt])
+}
+
+// Staging-only, no-provider async wiring proof. Deliberately carries no
+// connectedSourceId/syncIntentId/executionId and no relation to
+// ConnectedSource: a probe can never be mistaken for, or converted into, a
+// real Drive sync task, and the worker branch that completes it never
+// references the provider/Drive execution path at all.
+model StagingAsyncProbe {
+  id                    String                @id @default(cuid())
+  organizationId        String
+  probeId               String
+  deterministicTaskName String                @unique
+  status                StagingSyncTaskStatus @default(PENDING)
+  attempts              Int                   @default(0)
+  failureCode           String?
+  createdAt             DateTime              @default(now())
+  startedAt             DateTime?
+  completedAt           DateTime?
+  updatedAt             DateTime              @updatedAt
+  organization          Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, probeId])
   @@index([organizationId, status, createdAt])
 }
 
