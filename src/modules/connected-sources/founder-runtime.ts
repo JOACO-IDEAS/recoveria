@@ -86,8 +86,8 @@ export class FounderConnectedSourceRuntime {
     assertConfiguration();
     const databaseUrl = required("CONNECTED_SOURCE_DATABASE_URL");
     this.approvedRootId = required("CONNECTED_SOURCE_APPROVED_ROOT_ID");
-    this.pickerApiKey = required("CONNECTED_SOURCE_PICKER_API_KEY");
-    this.appId = required("CONNECTED_SOURCE_GOOGLE_APP_ID");
+    this.pickerApiKey = process.env.CONNECTED_SOURCE_PICKER_API_KEY?.trim() ?? "";
+    this.appId = process.env.CONNECTED_SOURCE_GOOGLE_APP_ID?.trim() ?? "";
     this.prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: databaseUrl, max: 4 }) });
     this.sources = new PrismaConnectedSourceRepository(this.prisma);
     this.lifecycle = new PrismaDriveConnectionLifecycleRepository(this.prisma);
@@ -201,6 +201,7 @@ export class FounderConnectedSourceRuntime {
   }
 
   async pickerBootstrap() {
+    if (!this.pickerApiKey || !this.appId) throw new Error("CONNECTED_SOURCE_PICKER_CONFIGURATION_REQUIRED");
     await this.initialize();
     const token = await this.credentialProvider.getValidAccessToken(CONNECTION_ID);
     return createGooglePickerBootstrap({ apiKey: this.pickerApiKey, appId: this.appId, accessToken: token.value, accessTokenExpiresAt: new Date(Date.now() + 50 * 60_000).toISOString() });

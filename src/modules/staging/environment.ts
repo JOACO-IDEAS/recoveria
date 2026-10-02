@@ -28,12 +28,33 @@ const stagingSchema = z.object({
 
 export type StagingEnvironment = z.infer<typeof stagingSchema>;
 
-export function parseStagingEnvironment(input: Record<string, string | undefined>): StagingEnvironment {
-  const parsed = stagingSchema.parse(input);
-  const database = new URL(parsed.RECOVERIA_DATABASE_URL);
+const stagingWorkerSchema = stagingSchema.pick({
+  RECOVERIA_ENVIRONMENT: true,
+  RECOVERIA_DATABASE_URL: true,
+  RECOVERIA_GOOGLE_PROJECT_ID: true,
+  RECOVERIA_ORGANIZATION_ID: true,
+  RECOVERIA_CONNECTION_ID: true,
+  RECOVERIA_REQUIRED_SCOPE: true,
+});
+
+export type StagingWorkerEnvironment = z.infer<typeof stagingWorkerSchema>;
+
+function assertStagingDatabaseBoundary(databaseUrl: string): void {
+  const database = new URL(databaseUrl);
   const serialized = `${database.hostname}${database.pathname}`.toLowerCase();
   if (database.pathname !== "/recoveria_pilot" || /client[-_]?zero|concilia|production/.test(serialized)) throw new Error("STAGING_DATABASE_BOUNDARY_REJECTED");
+}
+
+export function parseStagingEnvironment(input: Record<string, string | undefined>): StagingEnvironment {
+  const parsed = stagingSchema.parse(input);
+  assertStagingDatabaseBoundary(parsed.RECOVERIA_DATABASE_URL);
   return { ...parsed, RECOVERIA_FOUNDER_EMAIL: parsed.RECOVERIA_FOUNDER_EMAIL.toLowerCase() };
+}
+
+export function parseStagingWorkerEnvironment(input: Record<string, string | undefined>): StagingWorkerEnvironment {
+  const parsed = stagingWorkerSchema.parse(input);
+  assertStagingDatabaseBoundary(parsed.RECOVERIA_DATABASE_URL);
+  return parsed;
 }
 
 export function assertEnvironmentSeparation(environment: RecoveriaEnvironment, value: string): void {
