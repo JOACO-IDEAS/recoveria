@@ -4,7 +4,7 @@ Keep this file short and current — prune/move items as they're done or superse
 
 ## NOW
 
-- Founder labels the 20-invoice canary using the private local review tool (`npm run client-zero:export-review-proposals && npm run client-zero:review-server`, see `CURRENT_STATE.md`'s Phase 8B.2 section) — this is what turns pipeline coverage into verified accuracy, per [knowledge/CLIENT_ZERO_READINESS.md](../knowledge/CLIENT_ZERO_READINESS.md) point 6. Once labels exist, re-run the evaluator (`GET /api/evaluation` on the review server) for real numbers.
+- Founder completes the 20-invoice labels in the upgraded private local review tool (`npm run client-zero:review-server`). Start with `DISAGREEMENTS`, `AMBIGUOUS`, and `NEEDS HUMAN REVIEW`; only founder ground truth may turn machine agreement into measured accuracy. Two existing founder labels are preserved; 238 remain unreviewed.
 - Decide whether to additively persist a `DriveSourceCheckpoint` row for the canary results, so the existing Product Surface read model can render them privately (see `CURRENT_STATE.md`'s Phase 8B.1 Product Surface finding) — smallest next engineering step, not yet authorized.
 
 ## NEXT

@@ -77,4 +77,13 @@ A local-only, never-deployed review tool now exists so the founder can turn Phas
 - An evaluator (`src/modules/client-zero/ground-truth-evaluation.ts`, pure/unit-tested) is ready to compute per-field correct/incorrect/not-present/uncertain counts, accuracy only where mathematically justified, false-extraction-when-absent vs. missed-extraction-when-present, and a document-level perfect-extraction rate — but reports all-zero/null until the founder actually labels something, confirmed live.
 - Zero Client Zero database mutation this phase (the snapshot step is read-only); zero Drive/Catedral/outbound activity; staging re-verified unchanged.
 
+### Phase 8B.2A — CLOSED (independent documentary verification layer)
+
+The same authorized 20-PDF private corpus now has a second, blind documentary observation layer, generated locally with Apple Vision OCR/PDFKit rather than the production `pdfjs-dist` extraction path. The verifier executable cannot import or read pipeline proposals or founder labels; its private observation artifact is written first, and only a separate comparator may subsequently read both layers.
+
+- All 20 PDFs were observed. Each of the 10 required documentary roles records `FOUND`, `NOT_FOUND`, or `AMBIGUOUS`, normalized/raw observations, confidence, page/provenance, provider/version, and timestamp. Documented due date remains strict: no inference from issue date or service period.
+- The private comparison artifact reports machine agreement and review workload only — never accuracy. Across 180 comparable field observations: 60 matches, 40 absent-agreements, 60 disagreements, 20 ambiguous, for 100 auto-verifiable and 80 human-required observations. Service/billing period is separately observed (2 found, 18 not found).
+- The private local workspace now shows four explicit layers (`RECOVERIA`, `INDEPENDENT VERIFIER`, `COMPARISON`, `FOUNDER GROUND TRUTH`), preserves the existing founder labels, prioritizes exception queues, and clearly warns that machine agreement is not documentary accuracy.
+- Both new private artifacts remain gitignored and mode `0600`; no real document value, filename, or credential is committed. No database write, provider request, pipeline tuning, deployment, collections/outbound action, or accounting/debt assertion occurred.
+
 See [ROADMAP.md](ROADMAP.md) for the full phase sequence and [tasks/BACKLOG.md](../tasks/BACKLOG.md) for what's actionable now vs. deferred.

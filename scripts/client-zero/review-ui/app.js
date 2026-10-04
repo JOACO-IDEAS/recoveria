@@ -13,9 +13,11 @@ const FIELD_META = {
   administration: { label: "Administration", role: "administration" },
   building: { label: "Consorcio / building", role: "building" },
   address: { label: "Property / address", role: "address" },
+  servicePeriod: { label: "Service / billing period observation", role: "service period", observationOnly: true },
 };
-const FIELD_ORDER = ["invoiceNumber", "invoiceDate", "dueDate", "amountCents", "currency", "issuer", "billedParty", "administration", "building", "address", "cuit", "description"];
+const FIELD_ORDER = ["invoiceNumber", "invoiceDate", "dueDate", "amountCents", "currency", "issuer", "billedParty", "administration", "building", "servicePeriod", "address", "cuit", "description"];
 const STATUSES = ["UNREVIEWED", "CORRECT", "INCORRECT", "NOT_PRESENT_IN_DOCUMENT", "UNCERTAIN"];
+const VERIFIER_FIELD = { invoiceNumber: "invoiceNumber", invoiceDate: "issueDate", dueDate: "documentedDueDate", amountCents: "nominalAmount", currency: "currency", issuer: "issuer", billedParty: "billedCustomer", administration: "administration", building: "building", servicePeriod: "servicePeriod" };
 
 const reviewerInput = document.getElementById("reviewer");
 reviewerInput.value = localStorage.getItem("cz-reviewer") || "";
@@ -23,6 +25,18 @@ reviewerInput.addEventListener("change", () => localStorage.setItem("cz-reviewer
 
 let documents = [];
 let activeId = null;
+let activeFilter = "ALL";
+
+function comparisonStatuses(entry) { return Object.values(entry.comparison?.fields || {}).map((field) => field.status); }
+function matchesFilter(entry) {
+  const statuses = comparisonStatuses(entry);
+  if (activeFilter === "ALL") return true;
+  if (activeFilter === "AUTO_VERIFIED") return statuses.length > 0 && statuses.every((status) => status === "AUTO_VERIFIED_MATCH" || status === "AUTO_VERIFIED_ABSENT");
+  if (activeFilter === "DISAGREEMENTS") return statuses.includes("DISAGREEMENT");
+  if (activeFilter === "AMBIGUOUS") return statuses.includes("AMBIGUOUS");
+  if (activeFilter === "NEEDS_HUMAN_REVIEW") return statuses.some((status) => ["DISAGREEMENT", "AMBIGUOUS", "HUMAN_REVIEW"].includes(status));
+  return Object.values(entry.groundTruth?.fields || {}).some((field) => field.status === "UNREVIEWED");
+}
 
 async function loadDocuments() {
   const response = await fetch("/api/documents");
@@ -33,9 +47,11 @@ async function loadDocuments() {
 }
 
 function renderDocList() {
-  const container = document.getElementById("doc-list");
+  const container = document.getElementById("doc-list-items");
   container.innerHTML = "";
-  for (const entry of documents) {
+  const visible = documents.filter(matchesFilter).sort((a, b) => Number(comparisonStatuses(b).some((s) => ["DISAGREEMENT", "AMBIGUOUS", "HUMAN_REVIEW"].includes(s))) - Number(comparisonStatuses(a).some((s) => ["DISAGREEMENT", "AMBIGUOUS", "HUMAN_REVIEW"].includes(s))));
+  document.getElementById("queue-summary").textContent = `${visible.length} of ${documents.length} documents`;
+  for (const entry of visible) {
     const id = entry.proposal.privateSafeDocumentId;
     const status = entry.groundTruth ? entry.groundTruth.status : "UNREVIEWED";
     const button = document.createElement("button");
@@ -68,23 +84,30 @@ function renderFields(entry) {
     const label = groundTruthFields[fieldName] || { status: "UNREVIEWED", correctedValue: null, note: null };
 
     const card = document.createElement("div");
-    card.className = "field-card" + (meta.role ? " identity" : "");
+    const verifierField = VERIFIER_FIELD[fieldName];
+    const observation = verifierField ? entry.independentVerification?.fields?.[verifierField] : null;
+    const comparison = verifierField ? entry.comparison?.fields?.[verifierField] : null;
+    card.className = "field-card" + (meta.role ? " identity" : "") + (comparison ? ` comparison-${comparison.status}` : "");
 
     const title = document.createElement("div");
     title.className = "field-name";
     title.innerHTML = `<span>${meta.label}</span>${meta.role ? `<span class="field-role">${meta.role}</span>` : ""}`;
     card.appendChild(title);
 
-    const proposedValue = document.createElement("div");
-    proposedValue.className = "proposed-value";
-    proposedValue.textContent = `Recoveria proposes: ${proposal.raw === null || proposal.raw === "" ? "(nothing — field not found)" : proposal.raw}`;
-    card.appendChild(proposedValue);
+    const layers = [
+      ["pipeline", "RECOVERIA", proposal.raw === null || proposal.raw === "" ? "NOT FOUND" : proposal.raw],
+      ["verifier", "INDEPENDENT VERIFIER", observation ? `${observation.status}${observation.rawObservedValue ? ` — ${observation.rawObservedValue}` : ""} · ${observation.confidence} · page ${observation.page ?? "—"}` : "NOT COMPARABLE"],
+      ["comparison", "COMPARISON", comparison?.status || "NOT COMPARABLE"],
+      ["ground-truth", "FOUNDER GROUND TRUTH", meta.observationOnly ? "NOT IN FOUNDER LABEL SET" : label.status],
+    ];
+    for (const [className, layerTitle, value] of layers) { const layer = document.createElement("div"); layer.className = `layer ${className}`; const heading = document.createElement("div"); heading.className = "layer-title"; heading.textContent = layerTitle; const body = document.createElement("div"); body.textContent = value; layer.append(heading, body); card.appendChild(layer); }
 
     const provenance = document.createElement("div");
     provenance.className = "provenance";
     provenance.textContent = proposal.sourceLocation ? `Evidence: ${JSON.stringify(proposal.sourceLocation)}` : "Evidence: none captured";
     card.appendChild(provenance);
 
+    if (meta.observationOnly) { container.appendChild(card); continue; }
     const statusRow = document.createElement("div");
     statusRow.className = "status-row";
     for (const status of STATUSES) {
@@ -121,5 +144,7 @@ document.getElementById("refresh-evaluation").addEventListener("click", async ()
   const response = await fetch("/api/evaluation");
   document.getElementById("evaluation-output").textContent = JSON.stringify(await response.json(), null, 2);
 });
+
+document.getElementById("document-filter").addEventListener("change", (event) => { activeFilter = event.target.value; renderDocList(); });
 
 void loadDocuments();

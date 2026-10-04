@@ -5,6 +5,8 @@ import path from "node:path";
 import { evaluateAll } from "../../src/modules/client-zero/ground-truth-evaluation";
 import { mergeNewDocuments, readGroundTruth, writeGroundTruth, applyFieldLabel } from "../../src/modules/client-zero/ground-truth-store";
 import { REVIEWABLE_FIELD_NAMES, type DocumentProposal, type FieldLabelStatus, type GroundTruthStore } from "../../src/modules/client-zero/ground-truth-types";
+import type { IndependentVerificationArtifact } from "../../src/modules/client-zero/independent-verification-types";
+import type { ComparisonArtifact } from "../../src/modules/client-zero/independent-comparison";
 
 // Phase 8B.2: private, local-only founder review server. Binds to
 // 127.0.0.1 only -- never 0.0.0.0, never deployed, never reachable from
@@ -17,6 +19,8 @@ const PRIVATE_ANALYSIS_ROOT = path.join(REPO_ROOT, ".private", "client-zero", "a
 const AUTHORIZED_CORPUS_ROOT = path.join(REPO_ROOT, ".private", "client-zero", "invoices", "discovery-01");
 const PROPOSALS_PATH = path.join(PRIVATE_ANALYSIS_ROOT, "phase-8b2-pipeline-proposals.json");
 const GROUND_TRUTH_PATH = path.join(PRIVATE_ANALYSIS_ROOT, "phase-8b2-ground-truth.json");
+const VERIFICATION_PATH = path.join(PRIVATE_ANALYSIS_ROOT, "phase-8b2a-independent-verification.json");
+const COMPARISON_PATH = path.join(PRIVATE_ANALYSIS_ROOT, "phase-8b2a-comparison.json");
 const UI_ROOT = path.join(REPO_ROOT, "scripts", "client-zero", "review-ui");
 const PORT = Number(process.env.RECOVERIA_REVIEW_SERVER_PORT ?? 4873);
 const HOST = "127.0.0.1";
@@ -59,6 +63,11 @@ async function main(): Promise<void> {
   const proposals = await loadProposals();
   if (proposals.length !== 20) throw new Error(`REVIEW_SERVER_PROPOSAL_COUNT_MISMATCH: expected 20, found ${proposals.length}`);
   let groundTruth = await loadOrInitGroundTruth(proposals);
+  const verification = JSON.parse(await readFile(VERIFICATION_PATH, "utf8")) as IndependentVerificationArtifact;
+  const comparison = JSON.parse(await readFile(COMPARISON_PATH, "utf8")) as ComparisonArtifact;
+  if (verification.documents.length !== 20 || comparison.documents.length !== 20) throw new Error("REVIEW_SERVER_INDEPENDENT_LAYER_COUNT_MISMATCH");
+  const verificationById = new Map(verification.documents.map((item) => [item.documentId, item]));
+  const comparisonById = new Map(comparison.documents.map((item) => [item.documentId, item]));
   const proposalsById = new Map(proposals.map((proposal) => [proposal.privateSafeDocumentId, proposal]));
   const authorizedCorpusRoot = await realpath(AUTHORIZED_CORPUS_ROOT);
 
@@ -69,18 +78,18 @@ async function main(): Promise<void> {
         const documentMatch = url.pathname.match(/^\/api\/documents\/([^/]+)(\/pdf)?$/);
 
         if (request.method === "GET" && url.pathname === "/api/documents") {
-          const result = proposals.map((proposal) => ({ proposal, groundTruth: groundTruth[proposal.privateSafeDocumentId] }));
+          const result = proposals.map((proposal) => ({ proposal, independentVerification: verificationById.get(proposal.privateSafeDocumentId), comparison: comparisonById.get(proposal.privateSafeDocumentId), groundTruth: groundTruth[proposal.privateSafeDocumentId] }));
           return respond(response, json(result));
         }
 
         if (request.method === "GET" && url.pathname === "/api/evaluation") {
-          return respond(response, json(evaluateAll(proposals, groundTruth)));
+          return respond(response, json({ founderGroundTruth: evaluateAll(proposals, groundTruth), machineAgreement: comparison.totals, agreementByField: comparison.agreementByField, servicePeriod: comparison.servicePeriod, warning: "Machine agreement is not documentary accuracy. Only founder ground truth can establish accuracy." }));
         }
 
         if (request.method === "GET" && documentMatch && !documentMatch[2]) {
           const proposal = proposalsById.get(documentMatch[1]);
           if (!proposal) return respond(response, errorResponse(404, "DOCUMENT_NOT_FOUND"));
-          return respond(response, json({ proposal, groundTruth: groundTruth[proposal.privateSafeDocumentId] }));
+          return respond(response, json({ proposal, independentVerification: verificationById.get(proposal.privateSafeDocumentId), comparison: comparisonById.get(proposal.privateSafeDocumentId), groundTruth: groundTruth[proposal.privateSafeDocumentId] }));
         }
 
         if (request.method === "GET" && documentMatch && documentMatch[2]) {

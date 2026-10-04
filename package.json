@@ -17,6 +17,8 @@
     "client-zero:evaluate-local-pdfs": "tsx scripts/ingestion/evaluate-local-pdfs.ts",
     "client-zero:evaluate-local-corpus": "tsx scripts/ingestion/evaluate-local-corpus.ts",
     "client-zero:export-review-proposals": "tsx scripts/client-zero/export-review-proposals.ts",
+    "client-zero:verify-independent": "tsx scripts/client-zero/run-independent-verification.ts",
+    "client-zero:compare-independent": "tsx scripts/client-zero/compare-independent-verification.ts",
     "client-zero:review-server": "tsx scripts/client-zero/run-review-server.ts",
     "pilot:google-drive": "tsx scripts/ingestion/run-google-drive-pilot.ts",
     "pilot:google-drive:prepare-corpus": "tsx scripts/ingestion/prepare-synthetic-drive-pilot-corpus.ts",

@@ -11,6 +11,9 @@ body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sa
 .layout { display: grid; grid-template-columns: 180px 1fr 420px; gap: 1px; background: #ddd; height: calc(100vh - 92px); }
 
 .doc-list { background: white; overflow-y: auto; padding: 8px; }
+.doc-list select { width: 100%; margin: 5px 0 7px; padding: 5px; }
+.filter-label { font-size: 11px; font-weight: 700; }
+.queue-summary { font-size: 10px; color: #555; margin-bottom: 8px; }
 .doc-list button { display: block; width: 100%; text-align: left; padding: 8px; margin-bottom: 4px; border: 1px solid #e2e2e2; border-radius: 6px; background: #fafafa; cursor: pointer; font-size: 12px; }
 .doc-list button.active { background: #1f2937; color: white; border-color: #1f2937; }
 .doc-list button .status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
@@ -31,6 +34,10 @@ body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sa
 .field-card .field-name { font-size: 12px; font-weight: 700; display: flex; justify-content: space-between; }
 .field-card .field-role { font-size: 10px; color: #2563eb; text-transform: uppercase; }
 .field-card .proposed-value { font-family: ui-monospace, monospace; font-size: 12px; background: #f3f4f6; padding: 4px 6px; border-radius: 4px; margin: 6px 0; word-break: break-word; }
+.layer { border-radius: 5px; padding: 5px 6px; margin: 5px 0; font-size: 11px; word-break: break-word; }
+.layer.pipeline { background: #eef2ff; }.layer.verifier { background: #ecfdf5; }.layer.comparison { background: #fffbeb; }.layer.ground-truth { background: #f5f3ff; }
+.layer-title { font-size: 9px; font-weight: 800; letter-spacing: .06em; color: #555; }
+.comparison-DISAGREEMENT,.comparison-AMBIGUOUS,.comparison-HUMAN_REVIEW { border-color: #f59e0b; border-left: 4px solid #f59e0b; }
 .field-card .provenance { font-size: 10px; color: #777; margin-bottom: 6px; }
 .field-card .status-row { display: flex; gap: 4px; flex-wrap: wrap; }
 .field-card .status-row button { font-size: 11px; padding: 4px 8px; border-radius: 4px; border: 1px solid #ccc; background: #fff; cursor: pointer; }
