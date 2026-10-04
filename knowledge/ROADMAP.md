@@ -12,7 +12,7 @@ This supersedes the sequencing in `RECOVERIA-PHASE-PLAN.md` for anything from he
 
 **NEXT. Not yet authorized to begin execution.** Real data: yes. Real collection actions: no. Full readiness design and gate: [CLIENT_ZERO_READINESS.md](CLIENT_ZERO_READINESS.md).
 
-- **8A** — Client Zero isolation/readiness (environment design, what must be isolated vs. reused — this is what Part B of the readiness doc covers; provisioning itself still needs separate authorization).
+- **8A** — Client Zero isolation/readiness. **CLOSED.** Environment provisioned and proven empty/isolated (separate database, first-class environment type, fail-closed cross-checks, kill switch, preflight). See `CURRENT_STATE.md`.
 - **8B** — Real invoice corpus ingestion (representative initial sample, not "upload everything" — see readiness doc point 4).
 - **8C** — Extraction + provenance quality (measured against a human-reviewed ground-truth sample, not visual impression — readiness doc points 5-6).
 - **8D** — Identity/relationship quality (entity resolution against real administrations/consorcios, same precision-over-recall policy as [INVARIANTS.md](INVARIANTS.md)).

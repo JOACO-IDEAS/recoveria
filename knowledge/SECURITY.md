@@ -8,10 +8,10 @@ Full historical detail: `RECOVERIA-SECURITY-BOUNDARIES.md`, `RECOVERIA-CLIENT-ZE
 |---|---|---|
 | `LOCAL` | active | Synthetic fixtures only |
 | `STAGING_SYNTHETIC` | **proven online, Phase 7C closed** | Frozen 40-document synthetic corpus only |
-| `CLIENT_ZERO_READ_ONLY` | **proposed, not provisioned** | Real Christophersen Ascensores invoices, read-only, no collection actions — see [CLIENT_ZERO_READINESS.md](CLIENT_ZERO_READINESS.md) |
+| `CLIENT_ZERO_READ_ONLY` | **provisioned and empty (Phase 8A closed)** | Database exists, isolated, zero rows beyond one Organization/Membership pair. **No real invoice data authorized or present yet.** |
 | `PRODUCTION` | does not exist | — |
 
-**Strict isolation between environments is mandatory and not yet fully designed for the `CLIENT_ZERO_READ_ONLY` boundary** — that design work is exactly what [CLIENT_ZERO_READINESS.md](CLIENT_ZERO_READINESS.md) addresses, and it does not authorize provisioning it.
+**Isolation for `CLIENT_ZERO_READ_ONLY` is now implemented at the database and environment-config level** (separate Postgres database with a dedicated least-privilege role, first-class `RECOVERIA_ENVIRONMENT` value with bidirectional fail-closed cross-checks against staging — see `src/modules/staging/environment.ts` and `src/modules/client-zero/environment-preflight.ts`). Still deferred to Phase 8B: dedicated compute (Cloud Run worker/API), a dedicated Cloud Tasks queue, and any real OAuth/Drive connection — none of these exist yet, and none are needed until real ingestion is separately authorized.
 
 ## No Client Zero data in any of these, ever
 

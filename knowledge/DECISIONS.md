@@ -50,6 +50,25 @@ Lightweight ADR-style log. Each entry: decision, why, status. Add new entries at
 **Why:** This is the pattern that successfully caught and safely resolved two real infrastructure bugs during Phase 7C (a missing IAM grant, a header-parsing bug) without ever touching real data or taking an irreversible action prematurely.
 **Status:** active, encoded in `AGENTS.md`.
 
+## Client Zero reuses the existing GCP project, with Postgres-level database isolation
+
+**Decision:** `CLIENT_ZERO_READ_ONLY` provisioning (Phase 8A) reuses the existing `recoveria-pilot` GCP project and the existing Neon endpoint, rather than creating a new GCP project or new Neon project. Isolation is achieved via a genuinely separate Postgres **database** (`recoveria_client_zero`, not a schema/row flag) with its own dedicated, least-privilege role that cannot query the staging database at all (proven directly: the role gets "relation does not exist" when attempting to read a staging table).
+**Why:** No Neon CLI/API key was available in this environment to provision a new Neon project programmatically, and creating a second GCP project would add billing/IAM-root complexity not clearly required by the approved readiness design (which specified "database/project" isolation, not necessarily a new project). A separate Postgres database on the same server is still hard cross-database isolation in Postgres — stronger than a schema split — even though it shares the underlying Neon compute/billing unit with staging.
+**Known limitation, flagged for the founder:** this is not as strong as a fully separate Neon project (different compute/region/billing unit). If stronger infrastructure-level isolation is wanted before real data ever enters this environment, provisioning a dedicated Neon project is the upgrade path — not done here because it requires Neon account-level access this session didn't have.
+**Status:** active, Phase 8A, this turn.
+
+## CLIENT_ZERO_READ_ONLY replaces the unused PRODUCTION_CLIENT_ZERO placeholder
+
+**Decision:** Renamed the pre-existing (but never wired anywhere else) `PRODUCTION_CLIENT_ZERO` enum value in `src/modules/staging/environment.ts` to `CLIENT_ZERO_READ_ONLY`.
+**Why:** Phase 8 is explicitly read-only with no collection actions; a name containing "PRODUCTION" could mislead a future agent or the founder into assuming broader write/production authority than this environment is ever meant to have. Confirmed via grep that the old name had zero other references anywhere in the codebase, so the rename was safe.
+**Status:** active, Phase 8A, this turn.
+
+## Dedicated compute for Client Zero is the target, but creation is deferred to Phase 8B
+
+**Decision:** Client Zero should eventually get its own Cloud Run worker/API and Cloud Tasks queue identities, never sharing `recoveria-staging-worker`/`recoveria-staging-api`/`recoveria-staging-tasks`. But none of that was created in Phase 8A.
+**Why:** Nothing needs to execute yet — there is no real Drive connection, no real ingestion task, and no authorized real corpus. Creating empty, unused Cloud Run services and a Cloud Tasks queue ahead of need would be exactly the "unnecessary production-scale infrastructure" the approved readiness design warned against. Deferring also means less unused attack surface sits around waiting for Phase 8B.
+**Status:** active; revisit at the start of Phase 8B, when real ingestion is separately authorized.
+
 ## Original Phase 0-10 plan superseded by actual build order
 
 **Decision:** `RECOVERIA-PHASE-PLAN.md`'s original numbering is historical context, not the current roadmap. [ROADMAP.md](ROADMAP.md) is the current sequence.

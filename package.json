@@ -13,6 +13,7 @@
     "db:generate": "prisma generate",
     "db:validate": "prisma validate",
     "client-zero:preflight": "node scripts/client-zero-preflight.mjs",
+    "client-zero:environment-preflight": "tsx scripts/client-zero-environment-preflight.ts",
     "client-zero:evaluate-local-pdfs": "tsx scripts/ingestion/evaluate-local-pdfs.ts",
     "client-zero:evaluate-local-corpus": "tsx scripts/ingestion/evaluate-local-corpus.ts",
     "pilot:google-drive": "tsx scripts/ingestion/run-google-drive-pilot.ts",

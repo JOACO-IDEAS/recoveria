@@ -39,6 +39,19 @@ Two earlier `StagingAsyncProbe` rows (`808899be-...`, `62991307-...`) are perman
 
 **PHASE 8 — CLIENT ZERO READ-ONLY: CHRISTOPHERSEN ASCENSORES**
 
-Real data: yes. Real collection actions: no. Goal: begin learning from and operating over real Christophersen Ascensores invoices while maintaining strict isolation, provenance, uncertainty, security, and documentary/accounting separation. **Client Zero access is not yet authorized.** The readiness design and gate are in [CLIENT_ZERO_READINESS.md](CLIENT_ZERO_READINESS.md); nothing in that document authorizes execution.
+Real data: yes. Real collection actions: no. Goal: begin learning from and operating over real Christophersen Ascensores invoices while maintaining strict isolation, provenance, uncertainty, security, and documentary/accounting separation. **Real Client Zero data access is still not authorized.** The readiness design is in [CLIENT_ZERO_READINESS.md](CLIENT_ZERO_READINESS.md).
+
+### Phase 8A — CLOSED (environment provisioned and proven empty)
+
+A first-class, isolated `CLIENT_ZERO_READ_ONLY` environment now exists and is proven empty:
+
+- Separate Postgres database `recoveria_client_zero` (same Neon endpoint/GCP project as staging, but a hard-isolated database with its own least-privilege role `recoveria_client_zero_owner` — cannot query staging's tables, confirmed directly). All 44 tables from the current schema applied via `prisma migrate deploy`; every table is empty.
+- Connection string lives only in a new Secret Manager secret, `recoveria-client-zero-database-url`, with zero IAM accessor grants (no service account has been given access yet — correctly nothing needs it before Phase 8B).
+- One `Organization` row (`recoveria-client-zero`) and one `OWNER` `Membership` row (`founder-operator`) — the only two rows in the entire database. No synthetic tenant identity was reused.
+- `src/modules/staging/environment.ts`: the environment enum's old, never-wired `PRODUCTION_CLIENT_ZERO` placeholder was renamed to `CLIENT_ZERO_READ_ONLY` (misleading "PRODUCTION" framing removed — Phase 8 is explicitly read-only). New `parseClientZeroEnvironment`/`parseClientZeroWorkerEnvironment` fail closed on: wrong environment value, any non-`recoveria_client_zero` database (including the real staging DB, `recoveria_test`, `recoveria_smoke`, or anything ConcilIA-looking), any staging/synthetic-flavored organization or connection id, and any attempt to set a collections/outbound-communication capability flag. `assertEnvironmentSeparation` is now bidirectional and wired into both staging and Client Zero parsing.
+- `src/modules/client-zero/environment-preflight.ts` (+ `npm run client-zero:environment-preflight`): a runtime-identity preflight distinct from the existing git-boundary preflight, checked live against both a deliberately-wrong config and the real provisioned secret.
+- `src/modules/client-zero/kill-switch.ts`: ingestion is disabled by default; a future Phase 8B ingestion dispatcher must call `assertClientZeroIngestionAllowed()` before any provider read.
+- **Deferred to Phase 8B, deliberately not built yet** (nothing requires it before real ingestion exists): dedicated Cloud Run worker/API, dedicated Cloud Tasks queue, real OAuth client/Drive connection, any service-account IAM grant on the new secret. See `CLIENT_ZERO_READINESS.md` and `CURRENT_HANDOFF.md` for the full reasoning.
+- **Zero Client Zero invoice content was accessed.** Zero real Drive calls. Zero collections/outbound activity. All confirmed in `CURRENT_HANDOFF.md`'s Phase 8A section.
 
 See [ROADMAP.md](ROADMAP.md) for the full phase sequence and [tasks/BACKLOG.md](../tasks/BACKLOG.md) for what's actionable now vs. deferred.

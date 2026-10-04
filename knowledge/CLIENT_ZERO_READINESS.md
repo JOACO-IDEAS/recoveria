@@ -17,7 +17,7 @@ Goal of Phase 8: begin learning from and operating over real Christophersen Asce
 
 **Recommendation: `CLIENT_ZERO_READ_ONLY` as a new environment value**, with its own database/project/runtime configuration, fully separate from `recoveria_pilot`/`STAGING_SYNTHETIC`. Same pattern Phase 7C already used for `STAGING_SYNTHETIC` vs `LOCAL` — a distinct `RECOVERIA_ENVIRONMENT` value the whole application fails closed around, not a flag layered onto the existing staging project.
 
-**Do not provision this yet.** This is a recommendation to evaluate, not a request for the database/project to be created.
+**Status: PROVISIONED (Phase 8A, approved and executed).** `CLIENT_ZERO_READ_ONLY` now exists as a first-class environment value (`src/modules/staging/environment.ts`); a separate, empty, isolated Postgres database (`recoveria_client_zero`) exists; a new `Organization`/`Membership` pair exists. See `CURRENT_STATE.md` and `CURRENT_HANDOFF.md` for full evidence. Still deferred: dedicated compute, real OAuth/Drive connection — neither is needed until Phase 8B.
 
 ## 2. What must be isolated
 
@@ -140,4 +140,4 @@ No step above is authorized by this document. This document is the design to be 
 
 ## Summary verdict
 
-**Not ready to execute today.** The code/architecture reuse surface is strong and mostly already proven (Phase 4.6B already extracted 20/20 core fields from the real cohort once, under prior authorization, with zero mutation). What's missing is entirely the isolation/provisioning/gate work above — none of which has started. Phase 8 execution should not begin until approvals 1-2 in point 10 are granted.
+**Updated after Phase 8A.** Approvals 1-2 (design + provisioning authorization) have been granted and executed: the isolated, empty `CLIENT_ZERO_READ_ONLY` environment now exists and is proven isolated (see `CURRENT_STATE.md`). The code/architecture reuse surface remains strong and mostly already proven (Phase 4.6B already extracted 20/20 core fields from the real cohort once, under prior authorization, with zero mutation). **Still not ready for real data access** — approvals 3-6 (named data-owner authorization, security gate sign-off, ingestion authorization, ground-truth/measurement authorization) remain ungranted, and real Drive/OAuth connection plus dedicated compute remain unbuilt, deliberately deferred to Phase 8B.

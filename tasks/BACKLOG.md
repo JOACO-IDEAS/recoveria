@@ -4,12 +4,11 @@ Keep this file short and current — prune/move items as they're done or superse
 
 ## NOW
 
-- Review and, if agreed, authorize the Phase 8 readiness design in [knowledge/CLIENT_ZERO_READINESS.md](../knowledge/CLIENT_ZERO_READINESS.md) — **no execution until explicitly authorized.**
+- Decide whether to request named data-owner authorization (Approval #3 in [knowledge/CLIENT_ZERO_READINESS.md](../knowledge/CLIENT_ZERO_READINESS.md)) to begin Phase 8B — no real data has been authorized yet.
 
 ## NEXT
 
-- Phase 8A: design and (once authorized) provision `CLIENT_ZERO_READ_ONLY` environment isolation (separate database/project from `recoveria_pilot`) per the readiness doc.
-- Phase 8B: define and obtain authorization for the first representative real-invoice sample (~200-500 invoices, see readiness doc point 4) — do not simply "upload everything available."
+- Phase 8B: define and obtain authorization for the first representative real-invoice sample (~200-500 invoices, see readiness doc point 4) — do not simply "upload everything available." Requires: named data-owner authorization, security gate sign-off, real OAuth/Drive connection setup, and (per Phase 8A's decision log) provisioning dedicated Client Zero compute/task-queue identities at that point, not before.
 - Phase 8C: build the human-reviewed ground-truth sample and the objective quality metrics harness (readiness doc points 5-6) before any extraction-quality claim is made.
 
 ## LATER
