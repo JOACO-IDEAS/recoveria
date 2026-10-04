@@ -4,12 +4,13 @@ Keep this file short and current — prune/move items as they're done or superse
 
 ## NOW
 
-- Decide whether to request named data-owner authorization (Approval #3 in [knowledge/CLIENT_ZERO_READINESS.md](../knowledge/CLIENT_ZERO_READINESS.md)) to begin Phase 8B — no real data has been authorized yet.
+- Founder manual review of the private, sanitized ground-truth manifest (`.private/client-zero/analysis/phase-8b1-canary-review-manifest.json`, gitignored, never committed) from the 20-invoice canary — this is what turns pipeline output into verified accuracy, per [knowledge/CLIENT_ZERO_READINESS.md](../knowledge/CLIENT_ZERO_READINESS.md) point 6.
+- Decide whether to additively persist a `DriveSourceCheckpoint` row for the canary results, so the existing Product Surface read model can render them privately (see `CURRENT_STATE.md`'s Phase 8B.1 Product Surface finding) — smallest next engineering step, not yet authorized.
 
 ## NEXT
 
-- Phase 8B: define and obtain authorization for the first representative real-invoice sample (~200-500 invoices, see readiness doc point 4) — do not simply "upload everything available." Requires: named data-owner authorization, security gate sign-off, real OAuth/Drive connection setup, and (per Phase 8A's decision log) provisioning dedicated Client Zero compute/task-queue identities at that point, not before.
-- Phase 8C: build the human-reviewed ground-truth sample and the objective quality metrics harness (readiness doc points 5-6) before any extraction-quality claim is made.
+- Scale beyond the 20-invoice canary to the first representative real-invoice sample (~200-500 invoices, readiness doc point 4) — a separate authorization from 8B.1's, do not treat it as already covered. Requires: named data-owner authorization, security gate sign-off, real OAuth/Drive connection setup, and dedicated Client Zero compute/task-queue identities at that point.
+- Phase 8C: build the human-reviewed ground-truth sample and the objective quality metrics harness at scale (readiness doc points 5-6) once the 200-500 sample is authorized.
 
 ## LATER
 
