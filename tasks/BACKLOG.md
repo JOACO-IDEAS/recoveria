@@ -4,7 +4,7 @@ Keep this file short and current — prune/move items as they're done or superse
 
 ## NOW
 
-- Founder manual review of the private, sanitized ground-truth manifest (`.private/client-zero/analysis/phase-8b1-canary-review-manifest.json`, gitignored, never committed) from the 20-invoice canary — this is what turns pipeline output into verified accuracy, per [knowledge/CLIENT_ZERO_READINESS.md](../knowledge/CLIENT_ZERO_READINESS.md) point 6.
+- Founder labels the 20-invoice canary using the private local review tool (`npm run client-zero:export-review-proposals && npm run client-zero:review-server`, see `CURRENT_STATE.md`'s Phase 8B.2 section) — this is what turns pipeline coverage into verified accuracy, per [knowledge/CLIENT_ZERO_READINESS.md](../knowledge/CLIENT_ZERO_READINESS.md) point 6. Once labels exist, re-run the evaluator (`GET /api/evaluation` on the review server) for real numbers.
 - Decide whether to additively persist a `DriveSourceCheckpoint` row for the canary results, so the existing Product Surface read model can render them privately (see `CURRENT_STATE.md`'s Phase 8B.1 Product Surface finding) — smallest next engineering step, not yet authorized.
 
 ## NEXT
