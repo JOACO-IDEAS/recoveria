@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Recoveria — Client Zero ground-truth review (private, local only)</title>
+<link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+<header class="topbar">
+  <div class="title">Recoveria — Client Zero canary ground-truth review <span class="badge">PRIVATE — LOCAL ONLY — NOT DEPLOYED</span></div>
+  <div class="reviewer-field">
+    <label for="reviewer">Reviewer name</label>
+    <input id="reviewer" type="text" placeholder="founder" autocomplete="off" />
+  </div>
+</header>
+
+<main class="layout">
+  <nav class="doc-list" id="doc-list" aria-label="Documents"></nav>
+
+  <section class="pdf-pane">
+    <h2>Original document</h2>
+    <iframe id="pdf-frame" title="Original invoice PDF" src="about:blank"></iframe>
+  </section>
+
+  <section class="fields-pane">
+    <h2 id="doc-heading">Select a document</h2>
+    <p class="review-reasons" id="review-reasons"></p>
+    <div id="fields-container"></div>
+  </section>
+</main>
+
+<footer class="evalbar">
+  <button id="refresh-evaluation">Refresh evaluation summary</button>
+  <pre id="evaluation-output"></pre>
+</footer>
+
+<script src="/app.js"></script>
+</body>
+</html>
