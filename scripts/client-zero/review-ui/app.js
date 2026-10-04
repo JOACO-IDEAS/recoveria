@@ -17,7 +17,7 @@ const FIELD_META = {
 };
 const FIELD_ORDER = ["invoiceNumber", "invoiceDate", "dueDate", "amountCents", "currency", "issuer", "billedParty", "administration", "building", "servicePeriod", "address", "cuit", "description"];
 const STATUSES = ["UNREVIEWED", "CORRECT", "INCORRECT", "NOT_PRESENT_IN_DOCUMENT", "UNCERTAIN"];
-const VERIFIER_FIELD = { invoiceNumber: "invoiceNumber", invoiceDate: "issueDate", dueDate: "documentedDueDate", amountCents: "nominalAmount", currency: "currency", issuer: "issuer", billedParty: "billedCustomer", administration: "administration", building: "building", servicePeriod: "servicePeriod" };
+const WORKSPACE_SCHEMA_VERSION = "phase-8b2a-workspace-v1";
 
 const reviewerInput = document.getElementById("reviewer");
 reviewerInput.value = localStorage.getItem("cz-reviewer") || "";
@@ -27,7 +27,7 @@ let documents = [];
 let activeId = null;
 let activeFilter = "ALL";
 
-function comparisonStatuses(entry) { return Object.values(entry.comparison?.fields || {}).map((field) => field.status); }
+function comparisonStatuses(entry) { return Object.values(entry.workspaceFields || {}).map((field) => field.semanticStatus).filter((status) => status !== "NOT_COMPARABLE"); }
 function matchesFilter(entry) {
   const statuses = comparisonStatuses(entry);
   if (activeFilter === "ALL") return true;
@@ -41,7 +41,8 @@ function matchesFilter(entry) {
 async function loadDocuments() {
   const response = await fetch("/api/documents");
   const payload = await response.json();
-  documents = payload;
+  if (!response.ok || payload.schemaVersion !== WORKSPACE_SCHEMA_VERSION || !Array.isArray(payload.documents)) throw new Error("REVIEW_WORKSPACE_RUNTIME_SCHEMA_MISMATCH — restart the local review server");
+  documents = payload.documents;
   renderDocList();
   if (!activeId && documents.length > 0) selectDocument(documents[0].proposal.privateSafeDocumentId);
 }
@@ -84,9 +85,10 @@ function renderFields(entry) {
     const label = groundTruthFields[fieldName] || { status: "UNREVIEWED", correctedValue: null, note: null };
 
     const card = document.createElement("div");
-    const verifierField = VERIFIER_FIELD[fieldName];
-    const observation = verifierField ? entry.independentVerification?.fields?.[verifierField] : null;
-    const comparison = verifierField ? entry.comparison?.fields?.[verifierField] : null;
+    const workspaceField = entry.workspaceFields?.[fieldName];
+    if (!workspaceField) throw new Error(`REVIEW_WORKSPACE_FIELD_MISSING:${fieldName}`);
+    const observation = workspaceField.observation;
+    const comparison = workspaceField.comparison;
     card.className = "field-card" + (meta.role ? " identity" : "") + (comparison ? ` comparison-${comparison.status}` : "");
 
     const title = document.createElement("div");
@@ -97,7 +99,7 @@ function renderFields(entry) {
     const layers = [
       ["pipeline", "RECOVERIA", proposal.raw === null || proposal.raw === "" ? "NOT FOUND" : proposal.raw],
       ["verifier", "INDEPENDENT VERIFIER", observation ? `${observation.status}${observation.rawObservedValue ? ` — ${observation.rawObservedValue}` : ""} · ${observation.confidence} · page ${observation.page ?? "—"}` : "NOT COMPARABLE"],
-      ["comparison", "COMPARISON", comparison?.status || "NOT COMPARABLE"],
+      ["comparison", "COMPARISON", workspaceField.semanticStatus.replace(/_/g, " ")],
       ["ground-truth", "FOUNDER GROUND TRUTH", meta.observationOnly ? "NOT IN FOUNDER LABEL SET" : label.status],
     ];
     for (const [className, layerTitle, value] of layers) { const layer = document.createElement("div"); layer.className = `layer ${className}`; const heading = document.createElement("div"); heading.className = "layer-title"; heading.textContent = layerTitle; const body = document.createElement("div"); body.textContent = value; layer.append(heading, body); card.appendChild(layer); }
@@ -147,4 +149,4 @@ document.getElementById("refresh-evaluation").addEventListener("click", async ()
 
 document.getElementById("document-filter").addEventListener("change", (event) => { activeFilter = event.target.value; renderDocList(); });
 
-void loadDocuments();
+void loadDocuments().catch((error) => { document.getElementById("fields-container").textContent = error instanceof Error ? error.message : "REVIEW_WORKSPACE_RUNTIME_ERROR"; });
