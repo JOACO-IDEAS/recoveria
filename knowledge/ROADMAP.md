@@ -10,7 +10,7 @@ This supersedes the sequencing in `RECOVERIA-PHASE-PLAN.md` for anything from he
 
 ## 8 — Client Zero Read-Only
 
-**NEXT. Not yet authorized to begin execution.** Real data: yes. Real collection actions: no. Full readiness design and gate: [CLIENT_ZERO_READINESS.md](CLIENT_ZERO_READINESS.md).
+**IN PROGRESS, founder-gated.** Real data: yes within previously approved narrow scopes. Real collection actions: no. Phases 8A, 8B.1, 8B.2, and 8B.2A are closed; further labels, corpus expansion, Drive/OAuth, Product Surface work, or infrastructure remain separately gated. Full readiness design: [CLIENT_ZERO_READINESS.md](CLIENT_ZERO_READINESS.md).
 
 - **8A** — Client Zero isolation/readiness. **CLOSED.** Environment provisioned and proven empty/isolated (separate database, first-class environment type, fail-closed cross-checks, kill switch, preflight). See `CURRENT_STATE.md`.
 - **8B** — Real invoice corpus ingestion. **8B.1 (20-invoice canary), 8B.2 (private founder review), and 8B.2A (blind independent verification) CLOSED** — aggregate results in `CURRENT_STATE.md`. Scaling to the full 200-500 representative sample remains separately gated.

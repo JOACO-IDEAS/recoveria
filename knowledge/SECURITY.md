@@ -8,10 +8,10 @@ Full historical detail: `RECOVERIA-SECURITY-BOUNDARIES.md`, `RECOVERIA-CLIENT-ZE
 |---|---|---|
 | `LOCAL` | active | Synthetic fixtures only |
 | `STAGING_SYNTHETIC` | **proven online, Phase 7C closed** | Frozen 40-document synthetic corpus only |
-| `CLIENT_ZERO_READ_ONLY` | **provisioned and empty (Phase 8A closed)** | Database exists, isolated, zero rows beyond one Organization/Membership pair. **No real invoice data authorized or present yet.** |
+| `CLIENT_ZERO_READ_ONLY` | **provisioned; narrow canary completed** | Separate read-only database/environment. A previously authorized 20-document canary was persisted for private review; source documents and derived private artifacts remain outside Git. No broader corpus, Drive/OAuth, Product Surface, or outbound action is authorized. |
 | `PRODUCTION` | does not exist | — |
 
-**Isolation for `CLIENT_ZERO_READ_ONLY` is now implemented at the database and environment-config level** (separate Postgres database with a dedicated least-privilege role, first-class `RECOVERIA_ENVIRONMENT` value with bidirectional fail-closed cross-checks against staging — see `src/modules/staging/environment.ts` and `src/modules/client-zero/environment-preflight.ts`). Still deferred to Phase 8B: dedicated compute (Cloud Run worker/API), a dedicated Cloud Tasks queue, and any real OAuth/Drive connection — none of these exist yet, and none are needed until real ingestion is separately authorized.
+**Isolation for `CLIENT_ZERO_READ_ONLY` is implemented at the database and environment-config level** (separate Postgres database with a dedicated least-privilege role, first-class `RECOVERIA_ENVIRONMENT` value with bidirectional fail-closed cross-checks against staging). The narrow canary used an authorized local/manual ingestion path. Dedicated compute, a dedicated Cloud Tasks queue, and any real OAuth/Drive connection remain deferred and separately gated.
 
 ## No Client Zero data in any of these, ever
 
@@ -36,7 +36,7 @@ This is a hard boundary enforced today by `node scripts/client-zero-preflight.mj
 
 ## No secrets anywhere in the repo
 
-No secrets, tokens, database URLs, OAuth client secrets, or credentials in: the repository, `docs/agent-handoffs/CURRENT_HANDOFF.md`, any `knowledge/*.md` file, or any log output. Secret values are fetched at runtime from Secret Manager / KMS and are never printed, even for debugging. If you need to confirm a secret exists, check its *presence* (e.g. `gcloud secrets versions access` piped straight into an env var, never echoed) — never its value.
+No secrets, tokens, database URLs, OAuth client secrets, or credentials in the repository, tracked handoff documents, `knowledge/*.md`, or logs. The optional local handoff follows the same no-secret rule even though it is ignored. Secret values are fetched at runtime from Secret Manager / KMS and are never printed, even for debugging. If you need to confirm a secret exists, check only its presence—never its value.
 
 ## Current trust chain (architectural level only — see ARCHITECTURE.md for the full diagram)
 

@@ -1,6 +1,6 @@
 # Current state
 
-This file captures only *current operational truth*. For the detailed turn-by-turn record of how we got here, see [docs/agent-handoffs/CURRENT_HANDOFF.md](../docs/agent-handoffs/CURRENT_HANDOFF.md) (untracked, always more current than this file for "what just happened"). For how we got from Phase 0 to here, see the root `RECOVERIA-*.md` files and `docs/RECOVERIA-PHASE-*.md`.
+This file captures current operational truth. A clean clone starts with [docs/TECHNICAL_HANDOFF.md](../docs/TECHNICAL_HANDOFF.md); the optional local `docs/agent-handoffs/CURRENT_HANDOFF.md` is untracked session/operational history and is not required for handoff. For how we got from Phase 0 to here, see the root `RECOVERIA-*.md` files and `docs/RECOVERIA-PHASE-*.md`.
 
 ## Phase 7C Engineering: **CLOSED**
 
@@ -39,7 +39,7 @@ Two earlier `StagingAsyncProbe` rows (`808899be-...`, `62991307-...`) are perman
 
 **PHASE 8 — CLIENT ZERO READ-ONLY: CHRISTOPHERSEN ASCENSORES**
 
-Real data: yes. Real collection actions: no. Goal: begin learning from and operating over real Christophersen Ascensores invoices while maintaining strict isolation, provenance, uncertainty, security, and documentary/accounting separation. **Real Client Zero data access is still not authorized.** The readiness design is in [CLIENT_ZERO_READINESS.md](CLIENT_ZERO_READINESS.md).
+Real data: yes within previously approved narrow scopes. Real collection actions: no. Goal: learn from real invoices while maintaining strict isolation, provenance, uncertainty, security, and documentary/accounting separation. The prior authorization covered only the completed 20-document canary and private review/verification work; it does not authorize new document access, corpus expansion, Drive/OAuth, Product Surface exposure, or outbound action. The readiness design is in [CLIENT_ZERO_READINESS.md](CLIENT_ZERO_READINESS.md).
 
 ### Phase 8A — CLOSED (environment provisioned and proven empty)
 

@@ -18,7 +18,7 @@ Pick the role the current task actually calls for. Don't default to "just review
 ## Working discipline
 
 - **Never share the same writable task surface concurrently with another agent.** If another agent (human-run Codex, another Claude session, etc.) may be mid-task on the same files/infra, confirm exclusive ownership before writing.
-- **Read `docs/agent-handoffs/CURRENT_HANDOFF.md` first**, every session, before assuming anything about current state — it is more current than this file or `knowledge/`.
+- **Read `AGENTS.md` and its mandatory tracked order first.** If the optional local `docs/agent-handoffs/CURRENT_HANDOFF.md` exists, read it after the tracked handoff/current-state documents for additional session detail.
 - **Inspect reality before trusting documentation.** `git log`, `git status`, a direct `gcloud`/`psql`/log read beats a stale doc every time infra or deployed state is in question.
 - **Update the handoff after coherent work.** Don't leave the next agent to reconstruct what happened from commit messages alone.
 - **STOP at every external/human-authorization boundary** listed in `AGENTS.md`'s "Safety boundaries" — this includes boundaries that look adjacent to something already authorized this session. Re-check scope every time, don't assume carry-over.

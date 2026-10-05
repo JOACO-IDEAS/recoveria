@@ -24,12 +24,13 @@ North star: **"Recoveria sabe qué sabe, de dónde lo sacó y cuándo no está s
 
 ## Mandatory reading order
 
-1. [docs/agent-handoffs/CURRENT_HANDOFF.md](docs/agent-handoffs/CURRENT_HANDOFF.md) — what the *last* agent actually did, current deployed state, immediate next step. Always read this first; it is ground truth for "right now," not this file.
+1. [docs/TECHNICAL_HANDOFF.md](docs/TECHNICAL_HANDOFF.md) — tracked, sanitized collaborator snapshot: what works, what is experimental, what is next, and what is intentionally absent from Git.
 2. [knowledge/CURRENT_STATE.md](knowledge/CURRENT_STATE.md) — current phase, what's proven online, current milestone.
 3. [knowledge/ARCHITECTURE.md](knowledge/ARCHITECTURE.md), [knowledge/INVARIANTS.md](knowledge/INVARIANTS.md), [knowledge/SECURITY.md](knowledge/SECURITY.md), [knowledge/DATA_SOURCES.md](knowledge/DATA_SOURCES.md) — durable rules that outlive any single phase.
 4. [knowledge/ROADMAP.md](knowledge/ROADMAP.md) and [tasks/BACKLOG.md](tasks/BACKLOG.md) — what's next and what's explicitly deferred.
 5. [knowledge/DECISIONS.md](knowledge/DECISIONS.md) — why things are the way they are, so you don't re-litigate settled calls.
-6. Only then, the detailed root-level `RECOVERIA-*.md` and `docs/RECOVERIA-PHASE-*.md` files for the specific area you're touching — they are the full historical record; `knowledge/` is the distilled, current-truth index into them, not a replacement.
+6. If present locally, `docs/agent-handoffs/CURRENT_HANDOFF.md` — untracked operational/session history. It can be more recent, but it is not required for a clean clone and may contain infrastructure detail unsuitable for GitHub.
+7. Only then, the detailed root-level `RECOVERIA-*.md` and `docs/RECOVERIA-PHASE-*.md` files for the specific area you're touching — they are the full historical record; `knowledge/` is the distilled, current-truth index into them, not a replacement.
 
 **Inspect reality before trusting documentation.** Run `git log --oneline -5`, `git status`, and read the actual current code/schema for anything you're about to change — documentation (including this Developer OS) can drift from the repository.
 
@@ -64,14 +65,15 @@ Do not declare a task PASS on partial validation. If a check cannot run (e.g. no
 
 - `LOCAL` — your working tree, synthetic fixtures, no real secrets needed.
 - `STAGING_SYNTHETIC` — the deployed Vercel + Cloud Run staging stack, synthetic corpus only (40 documents, frozen as a regression fixture — see [knowledge/CURRENT_STATE.md](knowledge/CURRENT_STATE.md)). This is what Phase 7C proved end-to-end.
-- `CLIENT_ZERO_READ_ONLY` — proposed next environment for Phase 8, **not yet provisioned**. See [knowledge/CLIENT_ZERO_READINESS.md](knowledge/CLIENT_ZERO_READINESS.md) for the full readiness gate. Do not provision, connect, or treat any current environment variable/flag as equivalent to this until it is explicitly authorized and built.
+- `CLIENT_ZERO_READ_ONLY` — provisioned as a separate read-only database/environment boundary. A previously authorized 20-document canary and private review workflow exist, but all source documents and derived private artifacts remain outside Git. No new access, broader corpus, Drive/OAuth connection, public exposure, or outbound action is authorized by that history.
 - Future `PRODUCTION` — does not exist yet.
 
 Never let synthetic and real-data state share a database, Drive root, OAuth connection, or log stream. See [knowledge/SECURITY.md](knowledge/SECURITY.md).
 
 ## Source-of-truth rules
 
-- `docs/agent-handoffs/CURRENT_HANDOFF.md` is the authoritative record of *what actually happened* and *what state things are in right now*. It is intentionally untracked in git (own convention — never commit it, only edit its content in the working tree).
+- `docs/TECHNICAL_HANDOFF.md` is the tracked, sanitized handoff a clean clone can rely on.
+- `docs/agent-handoffs/CURRENT_HANDOFF.md`, when present, is untracked session/operational history. Never commit it; never make cloneability depend on it.
 - `knowledge/*.md` is the durable, current-truth distillation — update it when a fact that outlives one session's work changes (a phase closes, an architecture decision is made, an invariant is added). Don't let it drift into a second handoff log.
 - The root-level `RECOVERIA-*.md` and `docs/RECOVERIA-PHASE-*.md` files are the full historical record of how we got here. Treat them as append-mostly history, not something to rewrite; `knowledge/` links into them rather than duplicating their content.
 - When documentation and code disagree, the code (and a direct, current read of infrastructure/database state) wins. Fix the documentation, flag the discrepancy, don't silently trust the doc.
@@ -85,7 +87,7 @@ Never let synthetic and real-data state share a database, Drive root, OAuth conn
 
 ## Handoff expectations
 
-After any coherent unit of work (a fix, a feature slice, a verification pass): update `docs/agent-handoffs/CURRENT_HANDOFF.md` with what changed, current state, and the exact next step/authorization needed. The next agent — possibly a different model, possibly you after a context reset — must be able to resume from that file plus this one without reconstructing chat history.
+After a coherent unit of work, update tracked canonical docs when durable truth changes. If the local `docs/agent-handoffs/CURRENT_HANDOFF.md` exists, also update it with session detail, but keep it untracked. A new collaborator must be able to resume from `AGENTS.md`, `docs/TECHNICAL_HANDOFF.md`, and `knowledge/` without founder chat history.
 
 ## Human authorization gates
 

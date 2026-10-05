@@ -8,7 +8,7 @@ Modular monolith: Next.js App Router + TypeScript for web/server surfaces, Postg
 
 ```
 src/modules/
-  client-zero            -- historical real-data mode gate, preflight, manifest, safe logging (code only, see SECURITY.md)
+  client-zero            -- read-only mode gate, preflights, canary persistence, private review/verification logic
   collection-interactions
   collections-engine
   communication-execution
@@ -61,7 +61,7 @@ Only two deterministic auto-resolution paths exist: exact single-candidate 11-di
 
 ## Evidence Inspector / Product Surface
 
-`EvidenceInspectorProvider` is mounted once around the app shell; any surface renders an `EvidenceReference` and the provider owns the single dialog/focus/dismissal lifecycle against the shared `DocumentViewer`. Interaction model: `claim or state → why → evidence → original source`. Currently reads only the synthetic showroom model + CSS-drawn document representation — no real PDF renderer or storage integration yet. The stable adapter boundary for a future real-document source is the existing `DocumentExtraction` input to `DocumentViewer` (a later adapter supplies real bytes/provenance without changing Case/Cartera/Agent entry points).
+`EvidenceInspectorProvider` is mounted once around the app shell; any surface renders an `EvidenceReference` and the provider owns the single dialog/focus/dismissal lifecycle against the shared `DocumentViewer`. Interaction model: `claim or state → why → evidence → original source`. The deployed Product Surface still reads the synthetic/checkpoint-backed model and has no authorized Client Zero adapter. Separately, a local-only Client Zero review server can stream private PDFs and render proposals, independent verification, comparison, and founder labels; it is never deployed and its data is absent from Git. The stable Product Surface adapter boundary remains `DocumentExtraction`.
 
 ## Prioritization and aging
 

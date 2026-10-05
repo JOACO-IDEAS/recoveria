@@ -1,6 +1,6 @@
 # Invariants
 
-These are durable product and data rules. They apply in every environment (`LOCAL`, `STAGING_SYNTHETIC`, the future `CLIENT_ZERO_READ_ONLY`, any future `PRODUCTION`) and outlive any single phase. If a change you're making would violate one of these, stop and raise it rather than quietly working around it. Sources: `RECOVERIA-DOMAIN-MODEL.md`, `RECOVERIA-EVIDENCE-MODEL.md`, `RECOVERIA-ENTITY-IDENTITY-POLICY.md`, `docs/RECOVERIA-PHASE-4-6B-REAL-DOCUMENT-UNDERSTANDING.md`, `docs/RECOVERIA-PHASE-4-6A-CLIENT-ZERO-DISCOVERY-SANITIZED.md`, `docs/RECOVERIA-PHASE-6B-1-CONNECTED-SOURCES-ARCHITECTURE.md`.
+These are durable product and data rules. They apply in every environment (`LOCAL`, `STAGING_SYNTHETIC`, the read-only `CLIENT_ZERO_READ_ONLY`, any future `PRODUCTION`) and outlive any single phase. If a change you're making would violate one of these, stop and raise it rather than quietly working around it. Sources: `RECOVERIA-DOMAIN-MODEL.md`, `RECOVERIA-EVIDENCE-MODEL.md`, `RECOVERIA-ENTITY-IDENTITY-POLICY.md`, `docs/RECOVERIA-PHASE-4-6B-REAL-DOCUMENT-UNDERSTANDING.md`, `docs/RECOVERIA-PHASE-4-6A-CLIENT-ZERO-DISCOVERY-SANITIZED.md`, `docs/RECOVERIA-PHASE-6B-1-CONNECTED-SOURCES-ARCHITECTURE.md`.
 
 ## Epistemic status is always one of four values
 

@@ -10,9 +10,9 @@ Lightweight ADR-style log. Each entry: decision, why, status. Add new entries at
 
 ## Client Zero is environment-separate from `recoveria_pilot`/`STAGING_SYNTHETIC`
 
-**Decision:** Any future Client Zero real-data environment uses a separate database/project/runtime configuration, not the staging-synthetic one.
+**Decision:** Client Zero uses a separate database/environment configuration, not the staging-synthetic one.
 **Why:** Mixing real and synthetic data in one database makes every future query a potential real-data leak risk and makes the synthetic regression fixture unsafe to reset/modify freely.
-**Status:** proposed, see [CLIENT_ZERO_READINESS.md](CLIENT_ZERO_READINESS.md) — not yet provisioned.
+**Status:** active and implemented at the environment/database boundary in Phase 8A. The database shares an underlying Neon project/endpoint with staging but is a separate database with a dedicated role; stronger project-level separation remains an optional future upgrade.
 
 ## Documentary vs. accounting truth is a structural, not cosmetic, separation
 
@@ -34,9 +34,9 @@ Lightweight ADR-style log. Each entry: decision, why, status. Add new entries at
 
 ## Developer OS / handoff workflow
 
-**Decision:** `docs/agent-handoffs/CURRENT_HANDOFF.md` stays the untracked, continuously-updated "what just happened / what's next" record. `knowledge/*.md` is a tracked, durable-truth index that links into the existing `RECOVERIA-*.md`/`docs/RECOVERIA-PHASE-*.md` history rather than duplicating it. `AGENTS.md` is the short operational entrypoint every agent reads first; `CLAUDE.md` adds Claude-specific working notes on top of it.
-**Why:** Without this split, every new agent either re-reads the entire chat history (expensive, lossy) or re-derives facts already settled in old docs (slow, error-prone). The split keeps "what's true right now" small and current while preserving the full historical record for when detail is actually needed.
-**Status:** active, established this turn.
+**Decision:** `docs/TECHNICAL_HANDOFF.md` is the tracked, sanitized collaborator snapshot. `docs/agent-handoffs/CURRENT_HANDOFF.md` stays an optional untracked session/operational record. `knowledge/*.md` is the tracked durable-truth index. `AGENTS.md` is the operational entrypoint; `CLAUDE.md` adds Claude-specific notes.
+**Why:** A GitHub clone cannot depend on an intentionally untracked file. This split keeps the repository self-contained while allowing detailed local operational notes to remain private.
+**Status:** active; supersedes the earlier handoff ordering while preserving the untracked-file convention.
 
 ## One writable task owner per bounded surface
 
@@ -63,10 +63,10 @@ Lightweight ADR-style log. Each entry: decision, why, status. Add new entries at
 **Why:** Phase 8 is explicitly read-only with no collection actions; a name containing "PRODUCTION" could mislead a future agent or the founder into assuming broader write/production authority than this environment is ever meant to have. Confirmed via grep that the old name had zero other references anywhere in the codebase, so the rename was safe.
 **Status:** active, Phase 8A, this turn.
 
-## Dedicated compute for Client Zero is the target, but creation is deferred to Phase 8B
+## Dedicated compute for Client Zero is the target, but remains deferred until a separately approved connected-source phase
 
 **Decision:** Client Zero should eventually get its own Cloud Run worker/API and Cloud Tasks queue identities, never sharing `recoveria-staging-worker`/`recoveria-staging-api`/`recoveria-staging-tasks`. But none of that was created in Phase 8A.
-**Why:** Nothing needs to execute yet — there is no real Drive connection, no real ingestion task, and no authorized real corpus. Creating empty, unused Cloud Run services and a Cloud Tasks queue ahead of need would be exactly the "unnecessary production-scale infrastructure" the approved readiness design warned against. Deferring also means less unused attack surface sits around waiting for Phase 8B.
+**Why:** The authorized 20-document canary was completed through a controlled local/manual path, without a Drive connection or standing ingestion runtime. Creating unused Cloud Run services and a Cloud Tasks queue ahead of an approved connected-source phase would add attack surface without serving the current workflow.
 **Status:** active; revisit at the start of Phase 8B, when real ingestion is separately authorized.
 
 ## Original Phase 0-10 plan superseded by actual build order

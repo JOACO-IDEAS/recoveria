@@ -38,6 +38,11 @@
 /reports/client-zero/**
 /screenshots/client-zero/**
 *client-zero-sensitive-report*
+.private/
+docs/agent-handoffs/
+screenshots/
+reports/
+.codex/
 .vercel
 .env*
 .artifacts/
