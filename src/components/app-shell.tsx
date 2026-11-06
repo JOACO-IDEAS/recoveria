@@ -2,7 +2,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-const nav = [["/", "Inicio"], ["/cartera", "Cartera"], ["/casos", "Casos"], ["/facturas", "Documentos"], ["/agente", "Agente"]] as const;
+const nav = [["/", "Inicio"], ["/cartera", "Cartera"], ["/casos", "Casos"], ["/facturas", "Documentos"], ["/agente", "Agente"], ["/whatsapp", "WhatsApp"]] as const;
 const secondaryNav = [["/configuracion", "Configuración"]] as const;
 
 export function AppShell({children}:{children:React.ReactNode}) {

@@ -239,6 +239,21 @@ enum StagingSyncTaskStatus {
   FAILED
 }
 
+enum WhatsAppMessageKind {
+  TEXT
+  IMAGE
+  DOCUMENT
+  UNSUPPORTED
+}
+
+enum WhatsAppProcessingStatus {
+  PENDING
+  RUNNING
+  SUCCEEDED
+  RETRY
+  FAILED
+}
+
 model Organization {
   id                          String                              @id @default(cuid())
   name                        String
@@ -280,6 +295,13 @@ model Organization {
   communicationOutcomes       CommunicationSendOutcome[]
   communicationDeliveryEvents CommunicationDeliveryEvent[]
   communicationSafetyStates   CommunicationExecutionSafetyState[]
+  whatsAppBusinessNumbers     WhatsAppBusinessNumber[]
+  whatsAppConversations       WhatsAppConversation[]
+  whatsAppMessages            WhatsAppInboundMessage[]
+  whatsAppJobs                WhatsAppProcessingJob[]
+  whatsAppInterpretations     WhatsAppInterpretation[]
+  whatsAppCandidateEvents     WhatsAppCrmCandidateEvent[]
+  whatsAppAuditEvents         WhatsAppAuditEvent[]
 }
 
 model ConnectedSource {
@@ -1089,4 +1111,149 @@ model DrivePilotExecution {
 
   @@index([organizationId, connectionId, status])
   @@index([organizationId, createdAt])
+}
+
+model WhatsAppBusinessNumber {
+  id             String                   @id @default(cuid())
+  organizationId String
+  phoneNumberId  String                   @unique
+  displayPhone   String?
+  retentionDays  Int                      @default(90)
+  active         Boolean                  @default(true)
+  createdAt      DateTime                 @default(now())
+  updatedAt      DateTime                 @updatedAt
+  organization   Organization             @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  conversations  WhatsAppConversation[]
+  messages       WhatsAppInboundMessage[]
+
+  @@unique([organizationId, id])
+  @@index([organizationId, active])
+}
+
+model WhatsAppConversation {
+  id                String                   @id @default(cuid())
+  organizationId    String
+  businessNumberId  String
+  senderPhoneHash   String
+  senderPhoneCipher String
+  lastMessageAt     DateTime
+  createdAt         DateTime                 @default(now())
+  updatedAt         DateTime                 @updatedAt
+  organization      Organization             @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  businessNumber    WhatsAppBusinessNumber   @relation(fields: [businessNumberId], references: [id], onDelete: Restrict)
+  messages          WhatsAppInboundMessage[]
+
+  @@unique([organizationId, businessNumberId, senderPhoneHash])
+  @@unique([organizationId, id])
+  @@index([organizationId, lastMessageAt])
+}
+
+model WhatsAppInboundMessage {
+  id                      String                     @id @default(cuid())
+  organizationId          String
+  businessNumberId        String
+  conversationId          String
+  metaMessageId           String                     @unique
+  kind                    WhatsAppMessageKind
+  senderDisplayNameCipher String?
+  textCipher              String?
+  mediaMetadata           Json?
+  receivedAt              DateTime
+  payloadHash             String
+  purgeAfter              DateTime
+  createdAt               DateTime                   @default(now())
+  organization            Organization               @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  businessNumber          WhatsAppBusinessNumber     @relation(fields: [businessNumberId], references: [id], onDelete: Restrict)
+  conversation            WhatsAppConversation       @relation(fields: [organizationId, conversationId], references: [organizationId, id], onDelete: Restrict)
+  job                     WhatsAppProcessingJob?
+  interpretation          WhatsAppInterpretation?
+  candidateEvent          WhatsAppCrmCandidateEvent?
+
+  @@unique([organizationId, metaMessageId])
+  @@unique([organizationId, id])
+  @@index([organizationId, conversationId, receivedAt])
+  @@index([organizationId, purgeAfter])
+}
+
+model WhatsAppProcessingJob {
+  id             String                   @id @default(cuid())
+  organizationId String
+  messageId      String                   @unique
+  status         WhatsAppProcessingStatus @default(PENDING)
+  attempts       Int                      @default(0)
+  nextAttemptAt  DateTime                 @default(now())
+  failureCode    String?
+  createdAt      DateTime                 @default(now())
+  updatedAt      DateTime                 @updatedAt
+  organization   Organization             @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  message        WhatsAppInboundMessage   @relation(fields: [organizationId, messageId], references: [organizationId, id], onDelete: Restrict)
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, messageId])
+  @@index([organizationId, status, nextAttemptAt])
+}
+
+model WhatsAppInterpretation {
+  id                     String                 @id @default(cuid())
+  organizationId         String
+  messageId              String                 @unique
+  schemaVersion          String
+  provider               String
+  model                  String
+  output                 Json
+  inputTokens            Int
+  outputTokens           Int
+  totalTokens            Int
+  estimatedCostUsdMicros Int
+  latencyMs              Int
+  createdAt              DateTime               @default(now())
+  organization           Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  message                WhatsAppInboundMessage @relation(fields: [organizationId, messageId], references: [organizationId, id], onDelete: Restrict)
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, messageId])
+  @@index([organizationId, createdAt])
+}
+
+model WhatsAppCrmCandidateEvent {
+  id                       String                 @id
+  organizationId           String
+  messageId                String                 @unique
+  caseId                   String?
+  partyId                  String?
+  invoiceIds               String[]
+  type                     String
+  reportedAmountMinor      BigInt?
+  reportedCurrency         String?
+  remainingCommitmentMinor BigInt?
+  promisedFor              String?
+  accreditationStatus      String                 @default("PENDING")
+  reconciliationStatus     String                 @default("PENDING")
+  reviewRequired           Boolean                @default(true)
+  warnings                 String[]
+  evidenceRefs             String[]
+  createdAt                DateTime               @default(now())
+  organization             Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  message                  WhatsAppInboundMessage @relation(fields: [organizationId, messageId], references: [organizationId, id], onDelete: Restrict)
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, messageId])
+  @@index([organizationId, type, createdAt])
+  @@index([organizationId, reviewRequired, createdAt])
+}
+
+model WhatsAppAuditEvent {
+  id             String       @id @default(cuid())
+  organizationId String
+  action         String
+  subjectType    String
+  subjectId      String
+  outcome        String
+  failureCode    String?
+  metadata       Json?
+  occurredAt     DateTime     @default(now())
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, occurredAt])
+  @@index([organizationId, action, outcome])
 }

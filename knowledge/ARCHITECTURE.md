@@ -23,6 +23,7 @@ src/modules/
   operational-intelligence
   product-surface        -- read model for Facturas/Evidence Inspector
   staging                -- STAGING_SYNTHETIC-only worker/probe wiring (Phase 7C)
+  whatsapp-intelligence  -- inbound Meta webhook, conversation interpretation, CRM candidate events
 ```
 
 Logical layers (unchanged since Phase 0): Web/UI → Application services (commands/queries, enforces authorization/workflow) → Domain (receivables, evidence, resolution, cases, prioritization policy — imports nothing UI/parser/AI-specific) → Adapters (Prisma repositories, object storage, parsers, job runner, auth, model provider).
@@ -70,6 +71,10 @@ Deterministic, versioned, explainable — no opaque ML score. Policy `recoveria-
 ## Async/communication infrastructure already in the schema
 
 The Prisma schema already contains `CommunicationExecution`/`CommunicationSendAttempt`/`CommunicationSendOutcome`/`CommunicationDeliveryEvent` models (built in earlier phases for a controlled, approved-draft send pipeline). **This infrastructure existing in code does not authorize any real sending.** Draft creation and send approval are separate permissions; real outbound sending to a real debtor/administration remains a hard founder-authorization gate regardless of what's wired in code (see [SECURITY.md](SECURITY.md)).
+
+## WhatsApp Intelligence V1 (local/synthetic only)
+
+An additive inbound-only module now accepts Meta-shaped webhooks, validates the raw-body signature, derives tenant scope from a configured business number, persists an idempotent conversation observation, and processes it through a durable job boundary. The local simulator uses a deterministic provider; the OpenAI Responses API adapter is prepared but was not called or configured. Output is a reviewable `WhatsAppCrmCandidateEvent`, never a `ReceivableLedgerEntry` or canonical material collection event. V1.1 isolates all CRM reads and proposed writes behind `RecoveriaCrmAdapter`; the core no longer assumes an ORM, database, or hosting provider. The audited Prisma catalog remains a read-only compatibility adapter while the commercial Hostinger transport is unknown. Full audit/setup: `docs/WHATSAPP_INTELLIGENCE_V1.md` and `docs/WHATSAPP_INTELLIGENCE_V1_1.md`.
 
 ## ConciliIA boundary
 

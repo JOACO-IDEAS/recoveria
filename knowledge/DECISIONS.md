@@ -74,3 +74,9 @@ Lightweight ADR-style log. Each entry: decision, why, status. Add new entries at
 **Decision:** `RECOVERIA-PHASE-PLAN.md`'s original numbering is historical context, not the current roadmap. [ROADMAP.md](ROADMAP.md) is the current sequence.
 **Why:** Actual implementation (Phases 4.6-4.7, 5A-5B, 6A-6B, 7B-7C) diverged from the original plan's numbering early, and the product direction itself has now pivoted from "grow the synthetic domain model" to "prove real-data quality on a narrow read-only slice first."
 **Status:** active, this turn.
+
+## WhatsApp observations remain separate from accounting truth
+
+**Decision:** An inbound WhatsApp message, payment declaration, promise, or receipt creates an immutable candidate event with pending accreditation and reconciliation. It never updates the receivable ledger automatically. A uniquely matched invoice improves routing but does not increase epistemic authority.
+**Why:** A debtor statement or attachment is evidence of a claim, not evidence that funds were credited or allocated. This preserves the existing documentary/accounting split and human-decision gate.
+**Status:** active; implemented locally in WhatsApp Intelligence V1. External Meta/OpenAI activation, migration execution, retention deletion and deployment remain separately gated.
