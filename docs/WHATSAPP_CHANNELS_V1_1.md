@@ -103,7 +103,8 @@ Bloqueos exactos para la primera conexión real:
 2. Disponer de un entorno sintético público HTTPS y autorizado; no usar producción.
 3. Crear/configurar activos Meta y credenciales en un gestor de secretos, con número oficial de prueba y mapeo tenant.
 4. Revisar/aplicar la migración existente sólo en la base sintética autorizada; este cambio no agrega migraciones.
-5. Proveer almacenamiento y control de seguridad antes de descargar adjuntos reales.
-6. Configurar `OPENAI_API_KEY` y validar el modelo en una prueba aislada; sigue pendiente y no bloquea las pruebas mock.
-7. Aprobar política de retención/borrado, observabilidad sin PII y procedimiento de rollback.
-8. Mantener salida real fuera de alcance hasta un permiso específico.
+5. Para importación personal o Coexistence reales, persistir el canal, la autorización y el registro fuente en el backend comercial o mediante una migración aditiva aprobada. El store Prisma V1.1 heredado sólo acepta números empresariales activos y no tiene esos campos; esta ampliación no ejecutó ni creó migraciones. La primera prueba Cloud API conserva su ruta existente y no depende de este punto.
+6. Proveer almacenamiento y control de seguridad antes de descargar adjuntos reales.
+7. Configurar `OPENAI_API_KEY` y validar el modelo en una prueba aislada; sigue pendiente y no bloquea las pruebas mock.
+8. Aprobar política de retención/borrado, observabilidad sin PII y procedimiento de rollback.
+9. Mantener salida real fuera de alcance hasta un permiso específico.
