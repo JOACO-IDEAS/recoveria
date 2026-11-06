@@ -41,6 +41,7 @@ export const interpretationSchema = z.object({
 export type WhatsAppInterpretation = z.infer<typeof interpretationSchema>;
 
 export interface IncomingWhatsAppMessage {
+  readonly sourceChannel?: WhatsAppSourceChannel;
   readonly organizationId: string;
   readonly businessPhoneNumberId: string;
   readonly metaMessageId: string;
@@ -52,6 +53,11 @@ export interface IncomingWhatsAppMessage {
   readonly receivedAt: string;
   readonly payloadHash: string;
 }
+
+export type WhatsAppSourceChannel =
+  | "WHATSAPP_PERSONAL_IMPORT"
+  | "WHATSAPP_BUSINESS_APP_COEXISTENCE"
+  | "WHATSAPP_CLOUD_API";
 
 export interface ConversationContext {
   readonly organizationId: string;

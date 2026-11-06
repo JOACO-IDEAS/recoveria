@@ -80,3 +80,9 @@ Lightweight ADR-style log. Each entry: decision, why, status. Add new entries at
 **Decision:** An inbound WhatsApp message, payment declaration, promise, or receipt creates an immutable candidate event with pending accreditation and reconciliation. It never updates the receivable ledger automatically. A uniquely matched invoice improves routing but does not increase epistemic authority.
 **Why:** A debtor statement or attachment is evidence of a claim, not evidence that funds were credited or allocated. This preserves the existing documentary/accounting split and human-decision gate.
 **Status:** active; implemented locally in WhatsApp Intelligence V1. External Meta/OpenAI activation, migration execution, retention deletion and deployment remain separately gated.
+
+## WhatsApp source modalities converge before interpretation
+
+**Decision:** Personal authorized imports, Business App Coexistence, and Cloud API emit the same versioned normalized message contract before entering one interpretation engine and one CRM adapter. Personal accounts are never scraped or presented as live-synchronized; Cloud API and Coexistence share Meta's official webhook adapter.
+**Why:** Source-specific acquisition and evidence rules differ, while debtor interpretation and CRM candidate-event semantics must remain consistent, tenant-isolated, and reviewable.
+**Status:** active in WhatsApp Intelligence V1.1. Real Meta onboarding, number migration, outbound messaging, database migration, deployment, and OpenAI activation remain separately gated.

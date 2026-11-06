@@ -17,6 +17,7 @@ This is the tracked, sanitized snapshot for an incoming technical collaborator. 
 - Founder ground-truth review is the current human task. The next possible engineering step is a separately approved private read-model adapter/persistence step.
 - WhatsApp Intelligence V1 is implemented locally with a synthetic simulator, deterministic provider, signed Meta webhook contract, additive Prisma migration, durable job/usage/audit design, and a prepared OpenAI adapter. It has not been migrated, deployed, connected to Meta/OpenAI, or used with real messages. See `docs/WHATSAPP_INTELLIGENCE_V1.md`.
 - WhatsApp Intelligence V1.1 adds the infrastructure-neutral `RecoveriaCrmAdapter`, an idempotent synthetic implementation, a host-supplied transport contract, CRM-operation previews in the simulator, and compatibility documentation for the separately operated Hostinger VPS. The VPS/repository contract remains unknown and was not accessed. See `docs/WHATSAPP_INTELLIGENCE_V1_1.md`.
+- The V1.1 channel extension adds one normalized message contract plus adapters for authorized personal imports, Business App Coexistence, and Cloud API. All three reuse the same interpreter/CRM path; outbound remains structurally disabled. See `docs/WHATSAPP_CHANNELS_V1_1.md`.
 - Real accounting truth, broad real-document ingestion, and real customer-facing automation are not implemented/authorized production capabilities.
 
 ## Highest-priority next steps

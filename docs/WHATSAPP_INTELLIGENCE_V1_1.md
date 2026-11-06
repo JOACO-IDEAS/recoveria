@@ -4,6 +4,8 @@
 
 V1.1 preserves V1 and extracts a host-neutral CRM boundary. The commercial VPS was not accessed and this repository is not assumed to match production.
 
+The channel-compatible extension keeps that boundary intact and adds a normalized contract for authorized personal imports, Business App Coexistence, and Cloud API. See `docs/WHATSAPP_CHANNELS_V1_1.md`.
+
 Reusable without infrastructure assumptions:
 
 - Meta subscription challenge and raw-body HMAC verification.
