@@ -1,5 +1,6 @@
 import { createHmac } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
+import { assertLocalWhatsAppActivationEnvironment } from "./activation-environment";
 import { RECOVERIA_CRM_CONTRACT_VERSION, SyntheticRecoveriaCrmAdapter } from "./crm-adapter";
 import { AuthorizedWhatsAppImportAdapter } from "./authorized-import";
 import { TransportRecoveriaCrmAdapter, type RecoveriaCrmApiRequest, type RecoveriaCrmTransport } from "./crm-api-contract";
@@ -17,6 +18,13 @@ import type { IncomingWhatsAppMessage } from "./types";
 const message = (overrides: Partial<IncomingWhatsAppMessage> = {}): IncomingWhatsAppMessage => ({ organizationId: "synthetic-whatsapp-tenant", businessPhoneNumberId: "phone-1", metaMessageId: "wamid-1", senderPhone: "5491100000000", senderDisplayName: "Administración López", kind: "TEXT", text: "Transferimos 500 mil de la factura 4567. Los 350 mil restantes los pagamos el viernes.", receivedAt: "2026-11-04T12:00:00.000Z", payloadHash: "hash", ...overrides });
 const limits = { maxInputCharacters: 24_000, maxContextMessages: 20, maxOutputTokens: 800, monthlyTokenLimit: 1_000_000, monthlyCostUsdMicrosLimit: 10_000_000 };
 const syntheticCrm = () => new SyntheticRecoveriaCrmAdapter(syntheticCrmSeed);
+const activationEnvironment = {
+  WHATSAPP_ACTIVATION_MODE: "local-meta-test",
+  RECOVERIA_ENVIRONMENT: "LOCAL",
+  WHATSAPP_INTERPRETER_PROVIDER: "mock",
+  WHATSAPP_ACTIVATION_ORGANIZATION_ID: "recoveria-whatsapp-meta-test",
+  RECOVERIA_DATABASE_URL: "postgresql://recoveria:recoveria@127.0.0.1:5432/recoveria_whatsapp_test",
+} as const;
 
 const metaWebhookBody = (phoneNumberId = "phone-1") => new TextEncoder().encode(JSON.stringify({
   object: "whatsapp_business_account",
@@ -34,6 +42,20 @@ describe("WhatsApp webhook security", () => {
     const raw = new TextEncoder().encode(JSON.stringify({ object: "whatsapp_business_account", entry: [{ changes: [{ value: { metadata: { phone_number_id: "phone-1" }, contacts: [{ wa_id: "54911", profile: { name: "López" } }], messages: [{ id: "wamid-text", from: "54911", timestamp: "1793793600", type: "text", text: { body: "Hola" } }, { id: "wamid-doc", from: "54911", timestamp: "1793793660", type: "document", document: { id: "media-1", mime_type: "application/pdf", filename: "pago.pdf" } }] } }] }] }));
     const parsed = await parseMetaWebhook(raw, { organizationForPhoneNumberId: async id => id === "phone-1" ? "org-1" : null });
     expect(parsed).toHaveLength(2); expect(parsed[0]).toMatchObject({ organizationId: "org-1", kind: "TEXT", text: "Hola" }); expect(parsed[1]).toMatchObject({ kind: "DOCUMENT", media: { mediaId: "media-1", filename: "pago.pdf" } });
+  });
+});
+
+describe("local Meta activation boundary", () => {
+  it("accepts only the disposable local database with the mock provider", () => {
+    expect(assertLocalWhatsAppActivationEnvironment(activationEnvironment).pathname).toBe("/recoveria_whatsapp_test");
+  });
+  it.each([
+    [{ ...activationEnvironment, RECOVERIA_ENVIRONMENT: "STAGING_SYNTHETIC" }, "WHATSAPP_ACTIVATION_ENVIRONMENT_INVALID"],
+    [{ ...activationEnvironment, WHATSAPP_INTERPRETER_PROVIDER: "openai" }, "WHATSAPP_ACTIVATION_PROVIDER_INVALID"],
+    [{ ...activationEnvironment, RECOVERIA_DATABASE_URL: "postgresql://example.test/recoveria_whatsapp_test" }, "WHATSAPP_ACTIVATION_DATABASE_NOT_LOCAL"],
+    [{ ...activationEnvironment, RECOVERIA_DATABASE_URL: "postgresql://recoveria:recoveria@127.0.0.1:5432/recoveria_pilot" }, "WHATSAPP_ACTIVATION_DATABASE_NAME_INVALID"],
+  ])("rejects an unsafe activation environment", (environment, error) => {
+    expect(() => assertLocalWhatsAppActivationEnvironment(environment)).toThrow(error);
   });
 });
 

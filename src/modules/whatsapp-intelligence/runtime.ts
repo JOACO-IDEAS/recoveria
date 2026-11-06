@@ -1,5 +1,6 @@
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "@prisma/client";
+import { assertLocalWhatsAppActivationEnvironment } from "./activation-environment";
 import { defaultUsageLimits, integerPrice, providerMode, requiredSecret } from "./configuration";
 import { PrismaCrmInvoiceCatalog, ReadOnlyCatalogRecoveriaCrmAdapter } from "./crm-sync";
 import { MockConversationInterpreter, OpenAIConversationInterpreter } from "./interpreter";
@@ -10,6 +11,7 @@ const required = (name: string) => { const value = process.env[name]?.trim(); if
 let singleton: ReturnType<typeof createRuntime> | undefined;
 
 function createRuntime() {
+  if (process.env.WHATSAPP_ACTIVATION_MODE) assertLocalWhatsAppActivationEnvironment();
   const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: required("RECOVERIA_DATABASE_URL"), max: 4 }) });
   const limits = defaultUsageLimits(); const mode = providerMode();
   const interpreter = mode === "openai" ? new OpenAIConversationInterpreter({

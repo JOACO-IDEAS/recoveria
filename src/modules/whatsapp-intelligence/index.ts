@@ -1,4 +1,6 @@
 export * from "./configuration";
+export * from "./activation-environment";
+export * from "./activation-inspector";
 export * from "./authorized-import";
 export * from "./crm-adapter";
 export * from "./crm-api-contract";
